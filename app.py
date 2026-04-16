@@ -34,46 +34,9 @@ from utils.startup_check import show_setup_wizard
 if not show_setup_wizard():
     st.stop()  # Don't proceed until config is complete
 
-
-# ── Page routing ─────────────────────────────────────────────────────────────
-# Uses st.session_state["current_page"] as the source of truth.
-# st.query_params["page"] is synced on load and after navigation for bookmarkability.
-
-VALID_PAGES = {
-    "login", "register", "reset_password",
-    "home", "discover", "matches", "chat",
-    "profile", "settings", "events", "admin",
-}
-
-def get_current_page() -> str:
-    """
-    Determine the current page.
-    Priority: session_state > query_params > default("login")
-    """
-    # If session_state already has a page, use it
-    if "current_page" in st.session_state:
-        return st.session_state["current_page"]
-
-    # Otherwise bootstrap from query_params (e.g. direct URL visit / page refresh)
-    qp = st.query_params.get("page", "login")
-    page = qp if qp in VALID_PAGES else "login"
-    st.session_state["current_page"] = page
-    return page
-
-
-def navigate(page: str):
-    """Navigate to a page — update both session_state and query_params."""
-    if page not in VALID_PAGES:
-        page = "login"
-    st.session_state["current_page"] = page
-    st.query_params["page"] = page
-
-
+# ── Router ───────────────────────────────────────────────────────────────────
 def route():
-    page = get_current_page()
-
-    # Keep query_params in sync (handles browser back/forward edge cases)
-    st.query_params["page"] = page
+    page = st.query_params.get("page", "login")
 
     # Public pages (no auth required)
     if page == "login":
@@ -88,7 +51,7 @@ def route():
         from pages.reset_password import render
         render()
 
-    # Protected pages (auth guard handled inside each page via require_auth)
+    # Protected pages (auth required - handled inside each page)
     elif page == "home":
         from components.navbar import render_navbar
         render_navbar()
@@ -138,6 +101,7 @@ def route():
         render()
 
     else:
+        # 404 fallback
         st.markdown("""
         <div style="text-align:center; padding:4rem; color:#888;">
             <div style="font-size:4rem;">😕</div>
@@ -146,7 +110,7 @@ def route():
         </div>
         """, unsafe_allow_html=True)
         if st.button("← Go Home"):
-            navigate("home")
+            st.query_params["page"] = "home"
             st.rerun()
 
 
@@ -159,6 +123,7 @@ try:
     route()
 except Exception as e:
     err = str(e)
+    # Show friendly error for known config issues
     if "SUPABASE" in err or "supabase" in err.lower():
         st.error(f"⚠️ Database connection error: {err}")
         st.info("👆 Fix your `.env` file and restart the app.")

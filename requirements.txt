@@ -1,18 +1,24 @@
+# Core
 streamlit>=1.32.0
-supabase>=2.3.0
 python-dotenv>=1.0.0
-requests>=2.31.0
+
+# Database
+supabase>=2.3.0
+
+# Auth & Security
 bcrypt>=4.1.2
-Pillow>=10.2.0
-cloudinary>=1.36.0
 python-jose>=3.3.0
+
+# Image Upload
+cloudinary>=1.36.0
+Pillow>=10.2.0
+
+# HTTP
+requests>=2.31.0
 httpx>=0.26.0
-phonenumbers>=8.13.0
+
+# Geolocation
 geopy>=2.4.1
-pandas>=2.2.0
-numpy>=1.26.0
+
+# Streamlit extras (optional but nice)
 streamlit-extras>=0.3.6
-streamlit-option-menu>=0.3.12
-streamlit-lottie>=0.0.5
-extra-streamlit-components>=0.1.60
-st-pages>=0.4.5

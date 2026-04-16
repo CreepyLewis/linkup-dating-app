@@ -1,6 +1,6 @@
 """
 pages/discover.py
-Swipe / discover page — like or pass profiles
+Swipe / discover page - like or pass profiles
 """
 
 import streamlit as st
@@ -12,7 +12,7 @@ from utils.matching import rank_profiles
 from utils.filters import (
     INTERESTS_LIST, GENDER_OPTIONS, INTENT_OPTIONS, apply_filters
 )
-from components.profile_card import render_profile_card
+from components.profile_card import render_profile_card, render_report_block_buttons
 
 
 def render():
@@ -198,6 +198,10 @@ def render():
                 "<div style='text-align:center; color:#CCC; font-size:0.75rem;'>💎 Undo<br>Premium</div>",
                 unsafe_allow_html=True
             )
+
+    # Report / Block current profile
+    with st.expander("⚠️ Report or Block this person", expanded=False):
+        render_report_block_buttons(profile, user)
 
     # Who liked me (premium)
     st.markdown("---")

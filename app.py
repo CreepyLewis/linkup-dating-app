@@ -5,8 +5,12 @@ LinkUp Dating App — Main Streamlit Entry Point
 
 import streamlit as st
 from pathlib import Path
+from dotenv import load_dotenv
 
-# ── Page config (must be first Streamlit call) ────────────────────────────────
+# ── Load .env FIRST — before ANY other import ────────────────────────────────
+load_dotenv()
+
+# ── Page config (must be FIRST Streamlit call) ───────────────────────────────
 st.set_page_config(
     page_title="LinkUp — Find Your Person",
     page_icon="💘",
@@ -24,6 +28,11 @@ css_path = Path(__file__).parent / "assets" / "styles.css"
 if css_path.exists():
     with open(css_path) as f:
         st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
+
+# ── Startup config check ─────────────────────────────────────────────────────
+from utils.startup_check import show_setup_wizard
+if not show_setup_wizard():
+    st.stop()  # Don't proceed until config is complete
 
 # ── Router ───────────────────────────────────────────────────────────────────
 def route():
@@ -109,6 +118,22 @@ def route():
 if "discover_index" not in st.session_state:
     st.session_state["discover_index"] = 0
 
-
 # ── Run ───────────────────────────────────────────────────────────────────────
-route()
+try:
+    route()
+except Exception as e:
+    err = str(e)
+    # Show friendly error for known config issues
+    if "SUPABASE" in err or "supabase" in err.lower():
+        st.error(f"⚠️ Database connection error: {err}")
+        st.info("👆 Fix your `.env` file and restart the app.")
+    elif "Cloudinary" in err or "cloudinary" in err.lower():
+        st.error(f"⚠️ Image service error: {err}")
+    elif "Name or service not known" in err:
+        st.error(
+            "⚠️ **Network Error:** Could not connect to the database.\n\n"
+            "This usually means `SUPABASE_URL` in your `.env` file is wrong or missing.\n\n"
+            f"Details: `{err}`"
+        )
+    else:
+        st.exception(e)

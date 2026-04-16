@@ -1,25 +1,25 @@
 """
 app.py
-LinkUp Dating App — Main Streamlit Entry Point
+LinkUp Dating App - Main Streamlit Entry Point
 """
 
 import streamlit as st
 from pathlib import Path
 from dotenv import load_dotenv
 
-# ── Load .env FIRST — before ANY other import ────────────────────────────────
+# ── Load .env FIRST - before ANY other import ────────────────────────────────
 load_dotenv()
 
 # ── Page config (must be FIRST Streamlit call) ───────────────────────────────
 st.set_page_config(
-    page_title="LinkUp — Find Your Person",
+    page_title="LinkUp - Find Your Person",
     page_icon="💘",
     layout="wide",
     initial_sidebar_state="collapsed",
     menu_items={
         "Get Help": "mailto:support@linkup.app",
         "Report a bug": "mailto:bugs@linkup.app",
-        "About": "💘 **LinkUp** — Find your person. Built with ❤️ in Nairobi.",
+        "About": "💘 **LinkUp** - Find your person. Built with ❤️ in Nairobi.",
     },
 )
 
@@ -51,7 +51,7 @@ def route():
         from pages.reset_password import render
         render()
 
-    # Protected pages (auth required — handled inside each page)
+    # Protected pages (auth required - handled inside each page)
     elif page == "home":
         from components.navbar import render_navbar
         render_navbar()

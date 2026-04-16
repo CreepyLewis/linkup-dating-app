@@ -5,11 +5,7 @@ python-dotenv>=1.0.0
 # Database
 supabase>=2.3.0
 
-# Auth & Security
-bcrypt>=4.1.2
-python-jose>=3.3.0
-
-# Image Upload
+# Image Upload (optional — only needed if CLOUDINARY_* vars are set)
 cloudinary>=1.36.0
 Pillow>=10.2.0
 

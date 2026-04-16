@@ -192,7 +192,12 @@ ALTER TABLE messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE reports ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
 
--- Users can read non-hidden profiles
+-- ── users ────────────────────────────────────────────────────────────────────
+-- Any authenticated user can insert their own profile row (required for registration)
+CREATE POLICY "Users insert own profile" ON users
+    FOR INSERT WITH CHECK (auth.uid() = id);
+
+-- Users can read non-hidden, active profiles
 CREATE POLICY "Public profiles visible" ON users
     FOR SELECT USING (profile_hidden = FALSE AND is_active = TRUE);
 
@@ -200,14 +205,34 @@ CREATE POLICY "Public profiles visible" ON users
 CREATE POLICY "Users update own profile" ON users
     FOR UPDATE USING (auth.uid() = id);
 
+-- ── likes ────────────────────────────────────────────────────────────────────
 -- Users manage their own likes
 CREATE POLICY "Users manage own likes" ON likes
     FOR ALL USING (auth.uid() = user_id);
 
+-- ── passes ───────────────────────────────────────────────────────────────────
+ALTER TABLE passes ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users manage own passes" ON passes
+    FOR ALL USING (auth.uid() = user_id);
+
+-- ── blocks ───────────────────────────────────────────────────────────────────
+ALTER TABLE blocks ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users manage own blocks" ON blocks
+    FOR ALL USING (auth.uid() = blocker_id);
+
+-- ── matches ──────────────────────────────────────────────────────────────────
 -- Users see their own matches
 CREATE POLICY "Users see own matches" ON matches
     FOR SELECT USING (auth.uid() = user1_id OR auth.uid() = user2_id);
 
+-- Matches are inserted by the trigger (runs as SECURITY DEFINER), not by the client
+-- But allow insert so the Python fallback create_match() also works
+CREATE POLICY "Users insert own matches" ON matches
+    FOR INSERT WITH CHECK (auth.uid() = user1_id OR auth.uid() = user2_id);
+
+-- ── messages ─────────────────────────────────────────────────────────────────
 -- Users see messages in their matches
 CREATE POLICY "Users see own messages" ON messages
     FOR SELECT USING (auth.uid() = sender_id OR auth.uid() = receiver_id);
@@ -215,6 +240,17 @@ CREATE POLICY "Users see own messages" ON messages
 -- Users insert their own messages
 CREATE POLICY "Users send messages" ON messages
     FOR INSERT WITH CHECK (auth.uid() = sender_id);
+
+-- Users mark messages as read
+CREATE POLICY "Users update own messages" ON messages
+    FOR UPDATE USING (auth.uid() = receiver_id);
+
+-- ── notifications ─────────────────────────────────────────────────────────────
+CREATE POLICY "Users see own notifications" ON notifications
+    FOR SELECT USING (auth.uid() = user_id);
+
+CREATE POLICY "Users update own notifications" ON notifications
+    FOR UPDATE USING (auth.uid() = user_id);
 
 -- ============================================
 -- HELPER FUNCTION: Calculate distance (km)

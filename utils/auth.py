@@ -1,23 +1,14 @@
 """
 utils/auth.py
-Authentication helpers — register, login, logout, session management
+Authentication helpers - register, login, logout, session management
+
+Uses ONLY Supabase Auth. No bcrypt or custom password hashing.
 """
 
-import os
-import bcrypt
 import streamlit as st
 from typing import Optional, Dict
 from supabase import AuthApiError
-from utils.db import get_client, get_user_by_email, get_user_by_id, create_user, update_last_seen
-
-# ─── Password Hashing ─────────────────────────────────────────────────────────
-
-def hash_password(password: str) -> str:
-    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
-
-
-def verify_password(password: str, hashed: str) -> bool:
-    return bcrypt.checkpw(password.encode(), hashed.encode())
+from utils.db import get_client, get_user_by_id, create_user, update_last_seen
 
 
 # ─── Supabase Auth ────────────────────────────────────────────────────────────
@@ -46,15 +37,17 @@ def register_user(email: str, password: str, name: str, age: int, gender: str) -
         if not auth_user:
             return {"success": False, "error": "Registration failed. Try again."}
 
-        # Insert profile
+        # Insert profile — password managed entirely by Supabase Auth
         profile = create_user({
             "id": auth_user.id,
             "email": email,
             "name": name.strip(),
             "age": age,
             "gender": gender,
-            "password_hash": hash_password(password),  # backup hash
         })
+
+        if not profile:
+            return {"success": False, "error": "Account created but profile setup failed. Please contact support."}
 
         return {"success": True, "user": profile}
 
@@ -154,14 +147,16 @@ def refresh_session_user():
 
 
 def _clear_session():
-    for key in [SESSION_KEY, SESSION_TOKEN_KEY, "discover_index", "current_profiles"]:
+    for key in [SESSION_KEY, SESSION_TOKEN_KEY, "discover_index", "current_profiles",
+                "discover_profiles", "current_page"]:
         st.session_state.pop(key, None)
 
 
 def require_auth():
-    """Call at top of any protected page. Redirects to login if not authenticated."""
+    """Call at top of any protected page. Sets page to login if not authenticated."""
     if not is_authenticated():
-        st.session_state["redirect_after_login"] = st.query_params.get("page", "home")
+        st.session_state["redirect_after_login"] = st.session_state.get("current_page", "home")
+        st.session_state["current_page"] = "login"
         st.query_params["page"] = "login"
         st.rerun()
 

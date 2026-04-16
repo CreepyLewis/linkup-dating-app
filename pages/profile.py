@@ -1,6 +1,6 @@
 """
 pages/profile.py
-User profile — view & edit your own profile
+User profile - view & edit your own profile
 """
 
 import streamlit as st
@@ -102,24 +102,25 @@ def render():
         st.markdown('<div class="section-card"><div class="section-title">👤 Basic Information</div>', unsafe_allow_html=True)
         col1, col2 = st.columns(2)
         with col1:
-            name = st.text_input("Full Name", value=user.get("name", ""))
+            name = st.text_input("Full Name", value=user.get("name") or "")
             age = st.number_input("Age", 18, 99, value=int(user.get("age") or 25))
         with col2:
             gender_opts = ["male", "female", "non-binary", "other"]
             gender_idx = gender_opts.index(user.get("gender", "male")) if user.get("gender") in gender_opts else 0
             gender = st.selectbox("Gender", gender_opts, index=gender_idx)
-            location = st.text_input("City / Location", value=user.get("location", ""))
+            location = st.text_input("City / Location", value=user.get("location") or "")
         st.markdown("</div>", unsafe_allow_html=True)
 
         # About
         st.markdown('<div class="section-card"><div class="section-title">💬 About Me</div>', unsafe_allow_html=True)
         bio = st.text_area(
             "Bio",
-            value=user.get("bio", ""),
+            value=user.get("bio") or "",
             max_chars=300,
             placeholder="Tell people something interesting about yourself...",
             height=120,
         )
+        bio = bio or ""
         st.caption(f"{len(bio)}/300 characters")
         st.markdown("</div>", unsafe_allow_html=True)
 

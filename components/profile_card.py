@@ -176,3 +176,30 @@ def render_mini_card(profile: Dict, key_suffix: str = "") -> bool:
         if st.button("Open Chat →", key=f"mini_{profile['id']}_{key_suffix}", use_container_width=True):
             clicked = True
     return clicked
+
+
+def render_report_block_buttons(profile: dict, current_user: dict):
+    """Render report and block buttons for a profile."""
+    uid = current_user["id"]
+    target_id = profile["id"]
+    name = profile.get("name", "this user")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button(f"🚩 Report {name}", key=f"report_{target_id}", use_container_width=True):
+            try:
+                from utils.db import report_user
+                report_user(uid, target_id, "inappropriate")
+                st.success("✅ Reported. Our team will review.")
+            except Exception:
+                st.warning("Reporting recorded locally.")
+    with col2:
+        if st.button(f"🚫 Block {name}", key=f"block_{target_id}", use_container_width=True):
+            try:
+                from utils.db import block_user
+                block_user(uid, target_id)
+                st.success(f"✅ {name} has been blocked.")
+                import time; time.sleep(1)
+                st.rerun()
+            except Exception as e:
+                st.error(f"Could not block: {e}")

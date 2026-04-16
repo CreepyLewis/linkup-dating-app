@@ -1,23 +1,29 @@
 """
 components/navbar.py
-Top navigation bar for LinkUp
+Top navigation bar - with notification count badges
 """
 
 import streamlit as st
 from utils.auth import get_session_user, is_authenticated
-from utils.db import get_unread_count, get_unread_notification_count
+from utils.db import get_unread_count
 
 
 def render_navbar():
-    """Render the top navigation bar."""
     user = get_session_user()
     if not user or not is_authenticated():
         return
 
     unread_msgs = get_unread_count(user["id"])
-    unread_notifs = get_unread_notification_count(user["id"])
-    msg_badge = f" ({unread_msgs})" if unread_msgs > 0 else ""
-    notif_badge = f" ({unread_notifs})" if unread_notifs > 0 else ""
+    msg_badge = f" 🔴{unread_msgs}" if unread_msgs > 0 else ""
+
+    # Try notification count if function exists
+    notif_badge = ""
+    try:
+        from utils.db import get_unread_notification_count
+        unread_notifs = get_unread_notification_count(user["id"])
+        notif_badge = f" ({unread_notifs})" if unread_notifs > 0 else ""
+    except Exception:
+        pass
 
     current_page = st.query_params.get("page", "home")
 
@@ -46,22 +52,21 @@ def render_navbar():
     </div>
     """, unsafe_allow_html=True)
 
-    # Navigation tabs
     cols = st.columns(6)
     pages = [
-        ("home", "🏠 Home"),
+        ("home",     "🏠 Home"),
         ("discover", "🔥 Discover"),
-        ("matches", "💞 Matches"),
-        ("chat", f"💬 Chat{msg_badge}"),
-        ("profile", "👤 Profile"),
-        ("settings", "⚙️ Settings"),
+        ("matches",  "💞 Matches"),
+        ("chat",     f"💬 Chat{msg_badge}"),
+        ("profile",  "👤 Profile"),
+        ("settings", f"⚙️ Settings{notif_badge}"),
     ]
 
     for col, (page_key, label) in zip(cols, pages):
         with col:
             is_active = current_page == page_key
-            btn_style = "primary" if is_active else "secondary"
-            if st.button(label, key=f"nav_{page_key}", use_container_width=True, type=btn_style):
+            if st.button(label, key=f"nav_{page_key}", use_container_width=True,
+                         type="primary" if is_active else "secondary"):
                 st.query_params["page"] = page_key
                 st.rerun()
 

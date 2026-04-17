@@ -529,31 +529,6 @@ def get_event_attendees(event_id: str) -> List[Dict]:
         return []
 
 
-
-def delete_user_account(user_id: str):
-    """
-    Hard-delete a user profile row.
-    Auth user deletion is done in settings.py via admin.auth.admin.delete_user().
-    """
-    db = get_admin_client()
-    # Clean up related rows first to avoid FK constraint errors
-    for table, col in [
-        ("messages", "sender_id"), ("messages", "receiver_id"),
-        ("likes", "user_id"), ("likes", "liked_user_id"),
-        ("passes", "user_id"), ("passes", "passed_user_id"),
-        ("blocks", "blocker_id"), ("blocks", "blocked_user_id"),
-        ("reports", "reporter_id"), ("reports", "reported_user_id"),
-    ]:
-        try:
-            db.table(table).delete().eq(col, user_id).execute()
-        except Exception:
-            pass
-    # Delete profile row
-    try:
-        db.table("users").delete().eq("id", user_id).execute()
-    except Exception as e:
-        raise RuntimeError(f"Could not delete user profile: {e}")
-
 # ─── ADMIN ───────────────────────────────────────────────────────────────────
 
 def get_all_reports() -> List[Dict]:

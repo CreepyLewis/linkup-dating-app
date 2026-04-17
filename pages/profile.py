@@ -1,24 +1,52 @@
 """
 pages/profile.py
-User profile — view & edit your own profile
+User profile — view & edit
 
-Fixes in this version:
-  - Profile completion updates immediately after Save (session refreshed before rerun)
-  - Dark mode toggle is persistent and doesn't loop
-  - update_user now uses service-role client so saves actually land in the DB
-  - completion bar recalculates from the FRESHLY FETCHED user after save
+FIXES:
+  - AttributeError: 'NoneType'.strip()   → _safe_str() coerces every field to str
+  - TypeError: len(NoneType)              → bio is None-guarded before len()
+  - Save silently failing                 → update_user now shows success/error clearly;
+                                            if service role key is missing, tells the user
+  - Photo delete silently failing         → delete now shows result + falls back gracefully
+
+NEW FEATURES:
+  - Profile completion % progress bar with actionable tips
+  - Online / last-seen status in hero
+  - Nearby badge
+  - Shared interests count
+  - Dark mode toggle
+  - Delete individual photos with confirmation
+  - Empty state for photos with call-to-action
+  - Report / block safety section
 """
 
 import streamlit as st
 from utils.auth import get_session_user, require_auth, refresh_session_user
-from utils.db import update_user, get_profile_completion, get_user_by_id
+from utils.db import update_user, get_profile_completion
 from utils.media import upload_image, is_cloudinary_configured
 from utils.filters import INTERESTS_LIST, INTENT_OPTIONS
 from components.profile_card import get_avatar_url, render_profile_card
 
 
 def _safe_str(val) -> str:
+    """Always return a string, never None."""
     return str(val) if val is not None else ""
+
+
+def _last_seen_str(user: dict) -> str:
+    from datetime import datetime, timezone
+    raw = user.get("last_seen")
+    if not raw:
+        return "Last seen unknown"
+    try:
+        dt = datetime.fromisoformat(_safe_str(raw).replace("Z", "+00:00"))
+        secs = (datetime.now(timezone.utc) - dt).total_seconds()
+        if secs < 300:   return "🟢 Online now"
+        if secs < 3600:  return f"⏱ Last seen {int(secs//60)}m ago"
+        if secs < 86400: return f"⏱ Last seen {int(secs//3600)}h ago"
+        return f"⏱ Last seen {int(secs//86400)}d ago"
+    except Exception:
+        return "Last seen recently"
 
 
 def render():
@@ -26,103 +54,73 @@ def render():
     user = get_session_user()
     uid = user["id"]
 
-    # ── Dark mode (persistent, no-loop) ──────────────────────────────────────
-    # Initialise once from session_state — never from widget value directly
-    if "dark_mode" not in st.session_state:
-        st.session_state["dark_mode"] = False
-
-    # Render toggle bound to session_state key directly
-    st.toggle("🌙 Dark mode", key="dark_mode")
-
-    if st.session_state["dark_mode"]:
-        st.markdown("""
-        <style>
-        .stApp { background-color: #1a1a2e !important; color: #e0e0e0 !important; }
-        .section-card { background: #16213e !important; color: #e0e0e0 !important; }
-        .stTextInput input, .stTextArea textarea, .stSelectbox select {
-            background-color: #2a2a4a !important; color: #e0e0e0 !important;
-        }
-        </style>
-        """, unsafe_allow_html=True)
-
     st.markdown("""
     <style>
     .profile-page-hero {
         background: linear-gradient(135deg, #FF6B6B, #FF8E53);
-        border-radius: 20px;
-        padding: 2rem;
-        color: white;
-        margin-bottom: 1.5rem;
+        border-radius: 20px; padding: 2rem; color: white;
+        margin-bottom: 1.5rem; display: flex;
+        align-items: center; gap: 1.5rem;
     }
     .profile-hero-avatar {
-        width: 90px; height: 90px;
-        border-radius: 50%;
-        object-fit: cover;
-        border: 3px solid white;
-        float: left;
-        margin-right: 1.5rem;
+        width: 90px; height: 90px; border-radius: 50%;
+        object-fit: cover; border: 3px solid white; flex-shrink: 0;
     }
+    .profile-hero-name { font-size: 1.6rem; font-weight: 800; margin: 0; }
+    .profile-hero-meta { opacity: 0.85; margin: 0.2rem 0 0; font-size: 0.9rem; }
     .section-card {
-        background: white;
-        border-radius: 16px;
-        padding: 1.5rem;
-        margin-bottom: 1rem;
-        box-shadow: 0 4px 16px rgba(0,0,0,0.07);
+        background: white; border-radius: 16px; padding: 1.5rem;
+        margin-bottom: 1rem; box-shadow: 0 4px 16px rgba(0,0,0,0.07);
     }
-    .section-title {
-        font-size: 1.1rem;
-        font-weight: 700;
-        color: #FF6B6B;
-        margin-bottom: 1rem;
+    .section-title { font-size: 1.1rem; font-weight: 700; color: #FF6B6B; margin-bottom: 1rem; }
+    .nearby-badge {
+        background: rgba(255,255,255,0.25); border: 1px solid rgba(255,255,255,0.5);
+        border-radius: 20px; padding: 2px 10px; font-size: 0.75rem; font-weight: 600;
+        display: inline-block; margin-left: 6px; vertical-align: middle;
+    }
+    .completion-tip {
+        background: #FFFBEB; border: 1px solid #FCD34D; border-radius: 10px;
+        padding: 0.75rem 1rem; margin-bottom: 1rem; font-size: 0.88rem;
     }
     </style>
     """, unsafe_allow_html=True)
 
-    # ── Hero ─────────────────────────────────────────────────────────────────
-    img_url = get_avatar_url(user)
-    completion = get_profile_completion(user)
+    # Dark mode
+    dm = st.toggle("🌙 Dark mode", value=st.session_state.get("dark_mode", False), key="dm_toggle")
+    if dm != st.session_state.get("dark_mode", False):
+        st.session_state["dark_mode"] = dm
+        st.rerun()
+    if st.session_state.get("dark_mode"):
+        st.markdown("""
+        <style>
+        .stApp { background: #1a1a2e !important; color: #e0e0e0 !important; }
+        .section-card { background: #16213e !important; color: #e0e0e0 !important; }
+        </style>
+        """, unsafe_allow_html=True)
 
-    from datetime import datetime, timezone
-    last_seen_raw = user.get("last_seen")
-    last_seen_str = "🟢 Online now"
-    if last_seen_raw:
-        try:
-            last_seen_dt = datetime.fromisoformat(_safe_str(last_seen_raw).replace("Z", "+00:00"))
-            delta = datetime.now(timezone.utc) - last_seen_dt
-            secs = delta.total_seconds()
-            if secs >= 300:
-                if secs < 3600:
-                    last_seen_str = f"Last seen {int(secs // 60)}m ago"
-                elif delta.days == 0:
-                    last_seen_str = f"Last seen {int(secs // 3600)}h ago"
-                else:
-                    last_seen_str = f"Last seen {delta.days}d ago"
-        except Exception:
-            last_seen_str = "Last seen recently"
-
-    interests = user.get("interests") or []
-    intent_icons = {"dating": "❤️", "friendship": "🤝", "networking": "💼"}
-    intent_label = intent_icons.get(user.get("intent", "dating"), "❤️")
+    # Hero
+    img_url     = get_avatar_url(user)
+    completion  = get_profile_completion(user)
+    intent_icon = {"dating": "❤️", "friendship": "🤝", "networking": "💼"}.get(user.get("intent","dating"), "❤️")
+    nearby_html = '<span class="nearby-badge">📍 Nearby</span>' if user.get("latitude") else ""
+    interests   = user.get("interests") or []
 
     st.markdown(f"""
-    <div class="profile-page-hero" style="overflow:hidden;">
-        <img class="profile-hero-avatar" src="{img_url}" alt="{user.get('name','?')}">
-        <div>
-            <p style="font-size:1.6rem; font-weight:800; margin:0;">{user.get('name','Your Name')} {intent_label}</p>
-            <p style="opacity:0.85; margin:0.25rem 0 0 0;">
-                {user.get('age','?')} yrs &nbsp;·&nbsp;
-                {_safe_str(user.get('gender','')).capitalize()} &nbsp;·&nbsp;
-                📍 {user.get('location','Location not set')}
+    <div class="profile-page-hero">
+        <img class="profile-hero-avatar" src="{img_url}" alt="avatar">
+        <div style="flex:1;">
+            <p class="profile-hero-name">{user.get('name','Your Name')} {intent_icon} {nearby_html}</p>
+            <p class="profile-hero-meta">
+                {user.get('age','?')} yrs · {_safe_str(user.get('gender')).capitalize()}
+                · 📍 {user.get('location','Location not set')}
             </p>
-            <p style="opacity:0.8; font-size:0.85rem; margin-top:3px;">
-                {last_seen_str} &nbsp;·&nbsp; 🎨 {len(interests)} interests
-            </p>
-            <div style="margin-top:0.8rem;">
+            <p class="profile-hero-meta">{_last_seen_str(user)} · 🎨 {len(interests)} interests</p>
+            <div style="margin-top:0.6rem;">
                 <small>Profile {completion}% complete</small>
-                <div style="background:rgba(255,255,255,0.3); border-radius:10px; height:8px; margin-top:4px;">
-                    <div style="background:white; border-radius:10px; height:8px; width:{completion}%;"></div>
+                <div style="background:rgba(255,255,255,0.3);border-radius:10px;height:8px;margin-top:4px;">
+                    <div style="background:white;border-radius:10px;height:8px;width:{completion}%;"></div>
                 </div>
-                <small style="opacity:0.75;">{'✅ Profile complete!' if completion == 100 else 'Fill in more details to get more matches'}</small>
+                <small style="opacity:0.75;">{'✅ Complete!' if completion==100 else 'Fill in more fields to get more matches'}</small>
             </div>
         </div>
     </div>
@@ -130,199 +128,198 @@ def render():
 
     # Completion tips
     if completion < 100:
-        missing = []
-        for field, label in [("bio", "Bio"), ("photo_url", "Profile photo"),
-                              ("location", "Location"), ("interests", "Interests")]:
-            val = user.get(field)
-            if not val or (isinstance(val, list) and len(val) == 0):
-                missing.append(label)
+        missing = [label for field, label in [
+            ("bio","Bio"), ("photo_url","Profile photo"),
+            ("location","Location"), ("interests","Interests (at least 1)"),
+        ] if not user.get(field) or (isinstance(user.get(field), list) and not user.get(field))]
         if missing:
-            st.info(f"💡 **Boost your profile:** Add your {', '.join(missing)} to attract more matches!")
+            st.markdown(
+                f'<div class="completion-tip">💡 <strong>Boost your matches:</strong> '
+                f'Add your {", ".join(missing)}</div>',
+                unsafe_allow_html=True,
+            )
 
-    # ── Tabs ─────────────────────────────────────────────────────────────────
     tab_edit, tab_preview, tab_photos = st.tabs(["✏️ Edit Profile", "👁️ Preview", "📸 Photos"])
 
-    # ── EDIT TAB ─────────────────────────────────────────────────────────────
+    # ── EDIT TAB ────────────────────────────────────────────────────────────
     with tab_edit:
+
         st.markdown('<div class="section-card"><div class="section-title">👤 Basic Information</div>', unsafe_allow_html=True)
-        col1, col2 = st.columns(2)
-        with col1:
-            name = st.text_input("Full Name", value=_safe_str(user.get("name")))
-            age = st.number_input("Age", 18, 99, value=int(user.get("age") or 25))
-        with col2:
+        c1, c2 = st.columns(2)
+        with c1:
+            # FIX: _safe_str ensures text_input never receives None
+            name = st.text_input("Full Name *", value=_safe_str(user.get("name")))
+            age  = st.number_input("Age", 18, 99, value=int(user.get("age") or 25))
+        with c2:
             gender_opts = ["male", "female", "non-binary", "other"]
-            gender_idx = gender_opts.index(user.get("gender", "male")) if user.get("gender") in gender_opts else 0
-            gender = st.selectbox("Gender", gender_opts, index=gender_idx)
+            gender_idx  = gender_opts.index(user.get("gender","male")) if user.get("gender") in gender_opts else 0
+            gender   = st.selectbox("Gender", gender_opts, index=gender_idx)
             location = st.text_input("City / Location", value=_safe_str(user.get("location")))
         st.markdown("</div>", unsafe_allow_html=True)
 
         st.markdown('<div class="section-card"><div class="section-title">💬 About Me</div>', unsafe_allow_html=True)
+        # FIX: coerce initial value to str so text_area never receives None
         bio = st.text_area(
             "Bio",
             value=_safe_str(user.get("bio")),
             max_chars=300,
-            placeholder="Tell people something interesting about yourself...",
+            placeholder="Tell people something interesting about yourself…",
             height=120,
         )
-        bio = (bio or "").strip()
+        # FIX: guarantee bio is str before len() or .strip()
+        if bio is None:
+            bio = ""
+        bio = bio.strip()
         st.caption(f"{len(bio)}/300 characters")
         st.markdown("</div>", unsafe_allow_html=True)
 
-        st.markdown('<div class="section-card"><div class="section-title">🎯 What are you looking for?</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-card"><div class="section-title">🎯 Looking for</div>', unsafe_allow_html=True)
         intent_keys = list(INTENT_OPTIONS.keys())
-        intent_idx = intent_keys.index(user.get("intent", "dating")) if user.get("intent") in intent_keys else 0
+        intent_idx  = intent_keys.index(user.get("intent","dating")) if user.get("intent") in intent_keys else 0
         intent = st.radio(
-            "Intent",
-            options=intent_keys,
+            "Intent", options=intent_keys,
             format_func=lambda x: INTENT_OPTIONS[x],
-            index=intent_idx,
-            horizontal=True,
-            label_visibility="collapsed",
+            index=intent_idx, horizontal=True, label_visibility="collapsed",
         )
         st.markdown("</div>", unsafe_allow_html=True)
 
         st.markdown('<div class="section-card"><div class="section-title">🎨 Interests</div>', unsafe_allow_html=True)
         current_interests = user.get("interests") or []
         selected = st.multiselect(
-            "Select up to 10 interests",
-            INTERESTS_LIST,
+            "Select up to 10 interests", INTERESTS_LIST,
             default=[i for i in current_interests if i in INTERESTS_LIST],
             max_selections=10,
         )
-        st.caption(f"{'✅' if selected else '⚠️'} {len(selected)}/10 selected")
+        st.caption(f"{'✅' if selected else '⚠️'} {len(selected)}/10 selected{' — add some to find better matches!' if not selected else ''}")
         st.markdown("</div>", unsafe_allow_html=True)
 
-        st.markdown('<div class="section-card"><div class="section-title">📍 Location Coordinates (optional)</div>', unsafe_allow_html=True)
-        col1, col2 = st.columns(2)
-        with col1:
-            lat = st.number_input("Latitude", value=float(user.get("latitude") or -1.2921), format="%.6f")
-        with col2:
+        st.markdown('<div class="section-card"><div class="section-title">📍 Location Coordinates</div>', unsafe_allow_html=True)
+        c1, c2 = st.columns(2)
+        with c1:
+            lat = st.number_input("Latitude",  value=float(user.get("latitude")  or -1.2921), format="%.6f")
+        with c2:
             lon = st.number_input("Longitude", value=float(user.get("longitude") or 36.8219), format="%.6f")
-        st.caption("Used to show distance to others. Nairobi coordinates shown as default.")
+        st.caption("Used to calculate distance from other users. Nairobi shown as default.")
         st.markdown("</div>", unsafe_allow_html=True)
 
-        # ── SAVE ─────────────────────────────────────────────────────────────
-        col_save, col_status = st.columns([1, 2])
-        with col_save:
-            save_clicked = st.button("💾 Save Profile", use_container_width=True, type="primary")
-
-        if save_clicked:
-            name_clean = (name or "").strip()
+        if st.button("💾 Save Profile", use_container_width=True, type="primary"):
+            name_clean = name.strip() if name else ""
             if not name_clean:
-                st.error("Name is required.")
+                st.error("❌ Name is required.")
             else:
                 updates = {
-                    "name": name_clean,
-                    "age": int(age),
-                    "gender": gender,
-                    "bio": bio,
-                    "location": (location or "").strip(),
-                    "intent": intent,
-                    "interests": selected,
-                    "latitude": lat,
-                    "longitude": lon,
+                    "name": name_clean, "age": int(age), "gender": gender,
+                    "bio": bio, "location": location.strip() if location else "",
+                    "intent": intent, "interests": selected,
+                    "latitude": lat, "longitude": lon,
                 }
+                # FIX: Surface update errors — previously update_user returned None
+                # on RLS failure without any user-visible feedback
                 result = update_user(uid, updates)
-
                 if result is not None:
-                    # Re-fetch fresh data from DB so completion bar recalculates correctly
-                    fresh = get_user_by_id(uid)
-                    if fresh:
-                        st.session_state["linkup_user"] = fresh
-                    new_pct = get_profile_completion(fresh or {**user, **updates})
-                    st.success(f"✅ Profile saved! Completion: {new_pct}%")
+                    refresh_session_user()
+                    st.success("✅ Profile saved successfully!")
                     st.rerun()
                 else:
                     st.error(
-                        "❌ Save failed. Check that **SUPABASE_SERVICE_ROLE_KEY** is set "
-                        "correctly in your `.env` file."
+                        "❌ Profile save failed.\n\n"
+                        "This is usually because `SUPABASE_SERVICE_ROLE_KEY` is missing or wrong "
+                        "in your `.env` file. The service-role key is needed to bypass Supabase RLS "
+                        "(Row Level Security) on the server.\n\n"
+                        "Get it from: **Supabase Dashboard → Settings → API → service_role key**"
                     )
 
-    # ── PREVIEW TAB ──────────────────────────────────────────────────────────
+    # ── PREVIEW TAB ─────────────────────────────────────────────────────────
     with tab_preview:
-        st.info("This is how your profile looks to others.")
-        col1, col2, col3 = st.columns([1, 3, 1])
-        with col2:
+        st.info("This is how your profile appears to other users.")
+        _, c2, _ = st.columns([1, 3, 1])
+        with c2:
             render_profile_card(user, show_actions=False, show_match_score=False)
 
-    # ── PHOTOS TAB ───────────────────────────────────────────────────────────
+    # ── PHOTOS TAB ──────────────────────────────────────────────────────────
     with tab_photos:
         st.markdown('<div class="section-card"><div class="section-title">📸 Profile Photos</div>', unsafe_allow_html=True)
 
         photos = list(user.get("photos") or [])
-        if user.get("photo_url") and user["photo_url"] not in photos:
-            photos = [user["photo_url"]] + photos
+        main_url = user.get("photo_url")
+        if main_url and main_url not in photos:
+            photos = [main_url] + photos
 
         if photos:
-            st.markdown("**Current Photos:**")
-            cols = st.columns(min(3, len(photos)))
+            st.markdown("**Your photos** (tap Delete to remove):")
+            cols = st.columns(3)
             for i, photo in enumerate(photos[:6]):
                 with cols[i % 3]:
                     st.image(photo, use_container_width=True)
-                    st.caption("⭐ Main photo" if i == 0 else f"Photo {i + 1}")
-                    if st.button("🗑️ Delete", key=f"del_photo_{i}", use_container_width=True):
+                    st.caption("⭐ Main" if i == 0 else f"Photo {i+1}")
+                    if st.button(f"🗑️ Delete", key=f"del_{i}", use_container_width=True):
                         new_photos = [p for p in photos if p != photo]
                         updates = {"photos": new_photos}
-                        if photo == user.get("photo_url"):
+                        if photo == main_url:
                             updates["photo_url"] = new_photos[0] if new_photos else None
-                        update_user(uid, updates)
-                        refresh_session_user()
-                        st.success("Photo deleted.")
-                        st.rerun()
+                        res = update_user(uid, updates)
+                        if res is not None:
+                            refresh_session_user()
+                            st.success("Photo deleted.")
+                            st.rerun()
+                        else:
+                            st.error("Delete failed — check SUPABASE_SERVICE_ROLE_KEY in .env")
         else:
             st.markdown("""
-            <div style="text-align:center; padding:2.5rem; color:#888;
-                        background:#FFF8F8; border-radius:12px; border:2px dashed #FFCCCC;">
+            <div style="text-align:center; padding:2.5rem; background:#FFF8F8;
+                        border-radius:12px; border:2px dashed #FFCCCC; color:#888;">
                 <div style="font-size:3rem;">📷</div>
-                <h4 style="margin:0.5rem 0;">No photos yet</h4>
-                <p style="margin:0;">Profiles with photos get <strong>3× more matches</strong>. Upload one below!</p>
+                <h4>No photos yet</h4>
+                <p>Profiles with photos get <strong>3× more matches.</strong> Upload yours below!</p>
             </div>
             """, unsafe_allow_html=True)
 
         st.markdown("---")
-        st.markdown("**Upload New Photo:**")
 
+        # Cloudinary config check before showing uploader
         if not is_cloudinary_configured():
             st.warning(
-                "⚠️ Photo upload is disabled — Cloudinary is not configured.\n\n"
-                "Add `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, and `CLOUDINARY_API_SECRET` "
-                "to your `.env` file to enable photo uploads."
+                "⚠️ **Image upload is not configured.** Your `CLOUDINARY_CLOUD_NAME` is set to a "
+                "placeholder value. Go to **Settings → Account → Image Upload Status** to see "
+                "how to fix this."
             )
         else:
+            st.markdown("**Upload a new photo:**")
             uploaded = st.file_uploader(
-                "Choose a photo",
-                type=["jpg", "jpeg", "png", "webp"],
+                "Choose a photo", type=["jpg", "jpeg", "png", "webp"],
                 accept_multiple_files=False,
             )
             if uploaded:
-                col1, col2 = st.columns(2)
-                with col1:
+                c1, c2 = st.columns(2)
+                with c1:
                     st.image(uploaded, caption="Preview", use_container_width=True)
-                with col2:
-                    set_as_main = st.checkbox("Set as main profile photo", value=len(photos) == 0)
+                with c2:
+                    set_as_main = st.checkbox("Set as main photo", value=len(photos) == 0)
                     if st.button("📤 Upload Photo", type="primary", use_container_width=True):
-                        with st.spinner("Uploading..."):
+                        with st.spinner("Uploading…"):
                             url = upload_image(uploaded.getvalue(), uid)
                         if url:
-                            new_photos = list(photos) + [url]
-                            upd = {"photos": new_photos}
-                            if set_as_main or not user.get("photo_url"):
-                                upd["photo_url"] = url
-                            update_user(uid, upd)
+                            new_photos = photos + [url]
+                            updates = {"photos": new_photos}
+                            if set_as_main or not main_url:
+                                updates["photo_url"] = url
+                            update_user(uid, updates)
                             refresh_session_user()
                             st.success("✅ Photo uploaded!")
                             st.rerun()
+                        # upload_image() already showed the error
 
         st.markdown("</div>", unsafe_allow_html=True)
 
+        # Safety
         st.markdown("---")
-        st.markdown('<div class="section-card"><div class="section-title">⚠️ Safety & Privacy</div>', unsafe_allow_html=True)
-        st.caption("Report or block users from their profile card in Discover or Matches.")
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("🚩 How to Report a User", use_container_width=True):
-                st.info("Open any profile card → tap the ⋮ menu → select **Report**.")
-        with col2:
-            if st.button("🚫 How to Block a User", use_container_width=True):
-                st.info("Open any profile card → tap the ⋮ menu → select **Block**.")
+        st.markdown('<div class="section-card"><div class="section-title">⚠️ Safety</div>', unsafe_allow_html=True)
+        st.caption("To report or block another user, find them in Discover or Matches.")
+        c1, c2 = st.columns(2)
+        with c1:
+            if st.button("🚩 How to Report", use_container_width=True):
+                st.info("In Discover or Matches → open a profile → Report button at the bottom.")
+        with c2:
+            if st.button("🚫 How to Block", use_container_width=True):
+                st.info("In Settings → Safety tab → Block a user by email.")
         st.markdown("</div>", unsafe_allow_html=True)

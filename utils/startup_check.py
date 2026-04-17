@@ -80,7 +80,7 @@ def show_setup_wizard() -> bool:
     </style>
     <div class="setup-hero">
         <h1>💘 LinkUp Setup</h1>
-        <p>One-time configuration — takes about 2 minutes.</p>
+        <p>One-time configuration - takes about 2 minutes.</p>
     </div>
     """, unsafe_allow_html=True)
 
@@ -99,7 +99,7 @@ def show_setup_wizard() -> bool:
 
     # ── Fix: Missing Supabase Anon Key ───────────────────────────────────────
     if not checks["SUPABASE_ANON_KEY"][0]:
-        with st.expander("📋 Step 1 — Get your Supabase Anon Key", expanded=True):
+        with st.expander("📋 Step 1 - Get your Supabase Anon Key", expanded=True):
             st.markdown("""
 **How to find it:**
 1. Open → [Supabase API Settings](https://supabase.com/dashboard/project/knhkbjyorbsjhwxnchlh/settings/api)
@@ -124,7 +124,7 @@ def show_setup_wizard() -> bool:
 
     # ── Database schema reminder ─────────────────────────────────────────────
     st.markdown("---")
-    st.subheader("🗄️ Step 2 — Run Database Schema")
+    st.subheader("🗄️ Step 2 - Run Database Schema")
     st.info(
         "If you haven't already, run `database/schema.sql` in your Supabase SQL Editor:\n"
         "→ https://supabase.com/dashboard/project/knhkbjyorbsjhwxnchlh/sql/new"
@@ -159,7 +159,7 @@ CLOUDINARY_API_SECRET = "ZD2g4KkmTwJbQ2H798LBhO-LCek"
 ```
         """)
 
-    return False  # Not ready yet — stop the app
+    return False  # Not ready yet - stop the app
 
 
 def _save_env_key(key: str, value: str):

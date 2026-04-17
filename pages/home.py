@@ -79,7 +79,7 @@ def render():
     """, unsafe_allow_html=True)
 
     # Stats row
-    matches = get_user_matches(user["id"])
+    matches = get_user_matches(user["id"]) or []
     unread_msgs = get_unread_count(user["id"])
 
     col1, col2, col3, col4 = st.columns(4)

@@ -16,11 +16,11 @@ def calculate_match_score(user_a: Dict, user_b: Dict) -> float:
       - Proximity            (30%)
       - Activity recency     (20%)
       - Completeness         (10%)
-    Returns float 0.0 – 100.0
+    Returns float 0.0 - 100.0
     """
     score = 0.0
 
-    # 1. Shared interests (0–40)
+    # 1. Shared interests (0-40)
     interests_a = set(user_a.get("interests") or [])
     interests_b = set(user_b.get("interests") or [])
     if interests_a or interests_b:
@@ -31,7 +31,7 @@ def calculate_match_score(user_a: Dict, user_b: Dict) -> float:
         interest_score = 0
     score += interest_score
 
-    # 2. Proximity (0–30)
+    # 2. Proximity (0-30)
     lat_a = user_a.get("latitude")
     lon_a = user_a.get("longitude")
     lat_b = user_b.get("latitude")
@@ -50,7 +50,7 @@ def calculate_match_score(user_a: Dict, user_b: Dict) -> float:
         prox_score = 15  # unknown = neutral
     score += prox_score
 
-    # 3. Activity recency (0–20)
+    # 3. Activity recency (0-20)
     from datetime import datetime, timezone, timedelta
     last_seen_str = user_b.get("last_seen")
     if last_seen_str:
@@ -68,7 +68,7 @@ def calculate_match_score(user_a: Dict, user_b: Dict) -> float:
         except Exception:
             score += 10
 
-    # 4. Profile completeness (0–10)
+    # 4. Profile completeness (0-10)
     from utils.db import get_profile_completion
     completeness = get_profile_completion(user_b)
     score += (completeness / 100) * 10

@@ -1,6 +1,6 @@
 """
 pages/admin.py
-Admin moderation panel — only accessible to admin users
+Admin moderation panel - only accessible to admin users
 """
 
 import streamlit as st
@@ -159,7 +159,7 @@ def render():
 
                         st.markdown(f"""
                         **{u.get('name','?')}** ({u.get('email','?')}) {badge_str}
-                        — Age {u.get('age','?')}, {u.get('gender','?')}
+                        - Age {u.get('age','?')}, {u.get('gender','?')}
                         """)
                     with col_actions:
                         if u.get("is_active"):

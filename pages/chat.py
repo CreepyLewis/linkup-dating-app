@@ -1,6 +1,6 @@
 """
 pages/chat.py
-Chat page — select a match conversation and chat
+Chat page - select a match conversation and chat
 """
 
 import streamlit as st

@@ -11,29 +11,6 @@ from utils.media import upload_chat_image
 from components.profile_card import get_avatar_url
 
 
-
-def _get_online_status(user: dict) -> str:
-    """Return online/last-seen string for a user."""
-    from datetime import datetime, timezone
-    ls = user.get("last_seen")
-    if not ls:
-        return "Last seen unknown"
-    try:
-        dt = datetime.fromisoformat(str(ls).replace("Z", "+00:00"))
-        delta = (datetime.now(timezone.utc) - dt).total_seconds()
-        if delta < 300:
-            return "🟢 Online now"
-        elif delta < 3600:
-            return f"Last seen {int(delta//60)}m ago"
-        elif delta < 86400:
-            return f"Last seen {int(delta//3600)}h ago"
-        else:
-            from datetime import timedelta
-            days = int(delta // 86400)
-            return f"Last seen {days}d ago"
-    except Exception:
-        return "Last seen recently"
-
 def render_chat_box(match_id: str, current_user: Dict, other_user: Dict):
     """Full chat interface for a match."""
     uid = current_user["id"]
@@ -120,7 +97,7 @@ def render_chat_box(match_id: str, current_user: Dict, other_user: Dict):
         <img src="{other_img}" alt="{other_user.get('name','?')}">
         <div>
             <div class="chat-header-name">{other_user.get('name','?')}</div>
-            <div class="chat-header-status">💞 Matched · {_get_online_status(other_user)}</div>
+            <div class="chat-header-status">💞 You matched!</div>
         </div>
     </div>
     """, unsafe_allow_html=True)

@@ -70,7 +70,7 @@ def render():
             st.subheader(f"🗓️ {len(events)} Upcoming Event{'s' if len(events) != 1 else ''}")
 
             for event in events:
-                attendees = get_event_attendees(event["id"])
+                attendees = get_event_attendees(event["id"]) or []
                 attendee_ids = [a["id"] for a in attendees]
                 is_joined = uid in attendee_ids
                 creator = event.get("creator") or {}

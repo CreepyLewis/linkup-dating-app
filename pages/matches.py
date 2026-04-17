@@ -106,7 +106,7 @@ def render():
                 <img class="match-avatar" src="{img}" alt="{name}">
                 <div class="match-info">
                     <div class="match-name">{name}, {age}</div>
-                    <div class="match-meta">📍 {location or 'Location unknown'} · 🎨 {len([i for i in (other.get('interests') or []) if i in (user.get('interests') or [])])} shared interests</div>
+                    <div class="match-meta">📍 {location or 'Location unknown'}</div>
                 </div>
                 <div class="match-date">Matched {date_str}</div>
             </div>

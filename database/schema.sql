@@ -192,12 +192,7 @@ ALTER TABLE messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE reports ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
 
--- ── users ────────────────────────────────────────────────────────────────────
--- Any authenticated user can insert their own profile row (required for registration)
-CREATE POLICY "Users insert own profile" ON users
-    FOR INSERT WITH CHECK (auth.uid() = id);
-
--- Users can read non-hidden, active profiles
+-- Users can read non-hidden profiles
 CREATE POLICY "Public profiles visible" ON users
     FOR SELECT USING (profile_hidden = FALSE AND is_active = TRUE);
 
@@ -205,34 +200,14 @@ CREATE POLICY "Public profiles visible" ON users
 CREATE POLICY "Users update own profile" ON users
     FOR UPDATE USING (auth.uid() = id);
 
--- ── likes ────────────────────────────────────────────────────────────────────
 -- Users manage their own likes
 CREATE POLICY "Users manage own likes" ON likes
     FOR ALL USING (auth.uid() = user_id);
 
--- ── passes ───────────────────────────────────────────────────────────────────
-ALTER TABLE passes ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "Users manage own passes" ON passes
-    FOR ALL USING (auth.uid() = user_id);
-
--- ── blocks ───────────────────────────────────────────────────────────────────
-ALTER TABLE blocks ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "Users manage own blocks" ON blocks
-    FOR ALL USING (auth.uid() = blocker_id);
-
--- ── matches ──────────────────────────────────────────────────────────────────
 -- Users see their own matches
 CREATE POLICY "Users see own matches" ON matches
     FOR SELECT USING (auth.uid() = user1_id OR auth.uid() = user2_id);
 
--- Matches are inserted by the trigger (runs as SECURITY DEFINER), not by the client
--- But allow insert so the Python fallback create_match() also works
-CREATE POLICY "Users insert own matches" ON matches
-    FOR INSERT WITH CHECK (auth.uid() = user1_id OR auth.uid() = user2_id);
-
--- ── messages ─────────────────────────────────────────────────────────────────
 -- Users see messages in their matches
 CREATE POLICY "Users see own messages" ON messages
     FOR SELECT USING (auth.uid() = sender_id OR auth.uid() = receiver_id);
@@ -240,17 +215,6 @@ CREATE POLICY "Users see own messages" ON messages
 -- Users insert their own messages
 CREATE POLICY "Users send messages" ON messages
     FOR INSERT WITH CHECK (auth.uid() = sender_id);
-
--- Users mark messages as read
-CREATE POLICY "Users update own messages" ON messages
-    FOR UPDATE USING (auth.uid() = receiver_id);
-
--- ── notifications ─────────────────────────────────────────────────────────────
-CREATE POLICY "Users see own notifications" ON notifications
-    FOR SELECT USING (auth.uid() = user_id);
-
-CREATE POLICY "Users update own notifications" ON notifications
-    FOR UPDATE USING (auth.uid() = user_id);
 
 -- ============================================
 -- HELPER FUNCTION: Calculate distance (km)
@@ -328,3 +292,39 @@ $$ LANGUAGE plpgsql;
 CREATE TRIGGER on_message_created
     AFTER INSERT ON messages
     FOR EACH ROW EXECUTE FUNCTION notify_new_message();
+
+-- ============================================
+-- STORAGE BUCKETS (run after schema)
+-- Go to Supabase Storage UI and create these manually:
+--   Bucket name: avatars    (public: true)
+--   Bucket name: chat-images (public: true)
+--
+-- OR run this if your Supabase plan supports it:
+-- ============================================
+
+-- Storage policies (run after creating buckets in UI)
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('avatars', 'avatars', true)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('chat-images', 'chat-images', true)
+ON CONFLICT (id) DO NOTHING;
+
+-- Allow anyone to read public images
+CREATE POLICY "Public avatars read" ON storage.objects
+  FOR SELECT USING (bucket_id = 'avatars');
+
+CREATE POLICY "Public chat images read" ON storage.objects
+  FOR SELECT USING (bucket_id = 'chat-images');
+
+-- Allow authenticated users to upload their own images
+CREATE POLICY "Users upload own avatar" ON storage.objects
+  FOR INSERT WITH CHECK (
+    bucket_id = 'avatars' AND auth.role() = 'authenticated'
+  );
+
+CREATE POLICY "Users upload chat images" ON storage.objects
+  FOR INSERT WITH CHECK (
+    bucket_id = 'chat-images' AND auth.role() = 'authenticated'
+  );

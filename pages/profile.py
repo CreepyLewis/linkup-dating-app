@@ -160,7 +160,7 @@ def render():
         st.markdown("</div>", unsafe_allow_html=True)
 
         # Save button
-        if st.button("💾 Save Profile", use_container_width=True, type="primary"):
+        if st.button("Save Profile", use_container_width=True, type="primary", key="save_profile_btn"):
             if not name.strip():
                 st.error("Name is required.")
             else:
@@ -168,17 +168,29 @@ def render():
                     "name": name.strip(),
                     "age": int(age),
                     "gender": gender,
-                    "bio": bio.strip(),
-                    "location": location.strip(),
+                    "bio": (bio or "").strip(),
+                    "location": (location or "").strip(),
                     "intent": intent,
                     "interests": selected,
                     "latitude": lat,
                     "longitude": lon,
                 }
-                update_user(uid, updates)
-                refresh_session_user()
-                st.success("✅ Profile updated successfully!")
-                st.rerun()
+                with st.spinner("Saving..."):
+                    result = update_user(uid, updates)
+                if result is not None:
+                    refresh_session_user()
+                    st.success("Profile saved!")
+                    st.rerun()
+                else:
+                    # Try direct service client as fallback
+                    try:
+                        from utils.db import get_service_client
+                        get_service_client().table("users").update(updates).eq("id", uid).execute()
+                        refresh_session_user()
+                        st.success("Profile saved!")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Save failed: {e}")
 
     # ── PREVIEW TAB ─────────────────────────────────────────────────────────
     with tab_preview:

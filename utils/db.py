@@ -66,16 +66,18 @@ def get_user_by_email(email: str) -> Optional[Dict]:
 
 
 def create_user(data: Dict) -> Optional[Dict]:
+    """Use service role to bypass RLS on INSERT."""
     try:
-        res = get_client().table("users").insert(data).execute()
+        res = get_service_client().table("users").insert(data).execute()
         return res.data[0] if res.data else None
     except Exception as e:
         raise e
 
 
 def update_user(user_id: str, data: Dict) -> Optional[Dict]:
+    """Use service role to bypass RLS on UPDATE."""
     try:
-        res = get_client().table("users").update(data).eq("id", user_id).execute()
+        res = get_service_client().table("users").update(data).eq("id", user_id).execute()
         return res.data[0] if res.data else None
     except Exception:
         return None
@@ -174,7 +176,7 @@ def get_distance_km(lat1, lon1, lat2, lon2) -> Optional[float]:
 def like_user(user_id: str, liked_user_id: str) -> bool:
     """Like a user. Returns True if mutual match created."""
     try:
-        get_client().table("likes").insert({
+        get_service_client().table("likes").insert({
             "user_id": user_id, "liked_user_id": liked_user_id,
         }).execute()
         res = get_client().table("likes").select("id").eq("user_id", liked_user_id).eq("liked_user_id", user_id).execute()
@@ -185,7 +187,7 @@ def like_user(user_id: str, liked_user_id: str) -> bool:
 
 def pass_user(user_id: str, passed_user_id: str):
     try:
-        get_client().table("passes").insert({
+        get_service_client().table("passes").insert({
             "user_id": user_id, "passed_user_id": passed_user_id,
         }).execute()
     except Exception:
@@ -194,7 +196,7 @@ def pass_user(user_id: str, passed_user_id: str):
 
 def undo_last_action(user_id: str):
     try:
-        get_client().table("likes").delete().eq("user_id", user_id).order("created_at", desc=True).limit(1).execute()
+        get_service_client().table("likes").delete().eq("user_id", user_id).order("created_at", desc=True).limit(1).execute()
     except Exception:
         pass
 
@@ -260,7 +262,7 @@ def get_user_matches(user_id: str) -> List[Dict]:
 def create_match(user1_id: str, user2_id: str) -> Optional[Dict]:
     try:
         uid1, uid2 = min(user1_id, user2_id), max(user1_id, user2_id)
-        res = get_client().table("matches").insert({
+        res = get_service_client().table("matches").insert({
             "user1_id": uid1, "user2_id": uid2,
         }).execute()
         return res.data[0] if res.data else None
@@ -270,7 +272,7 @@ def create_match(user1_id: str, user2_id: str) -> Optional[Dict]:
 
 def unmatch(match_id: str):
     try:
-        get_client().table("matches").update({"is_active": False}).eq("id", match_id).execute()
+        get_service_client().table("matches").update({"is_active": False}).eq("id", match_id).execute()
     except Exception:
         pass
 
@@ -302,7 +304,7 @@ def send_message(match_id: str, sender_id: str, receiver_id: str, message: str, 
         }
         if media_url:
             payload["media_url"] = media_url
-        res = get_client().table("messages").insert(payload).execute()
+        res = get_service_client().table("messages").insert(payload).execute()
         return res.data[0] if res.data else None
     except Exception:
         return None
@@ -310,7 +312,7 @@ def send_message(match_id: str, sender_id: str, receiver_id: str, message: str, 
 
 def mark_messages_read(match_id: str, user_id: str):
     try:
-        get_client().table("messages").update({"is_read": True}).eq("match_id", match_id).eq("receiver_id", user_id).execute()
+        get_service_client().table("messages").update({"is_read": True}).eq("match_id", match_id).eq("receiver_id", user_id).execute()
     except Exception:
         pass
 
@@ -327,7 +329,7 @@ def get_unread_count(user_id: str) -> int:
 
 def block_user(blocker_id: str, blocked_user_id: str):
     try:
-        get_client().table("blocks").insert({
+        get_service_client().table("blocks").insert({
             "blocker_id": blocker_id, "blocked_user_id": blocked_user_id,
         }).execute()
     except Exception:
@@ -336,7 +338,7 @@ def block_user(blocker_id: str, blocked_user_id: str):
 
 def unblock_user(blocker_id: str, blocked_user_id: str):
     try:
-        get_client().table("blocks").delete().eq("blocker_id", blocker_id).eq("blocked_user_id", blocked_user_id).execute()
+        get_service_client().table("blocks").delete().eq("blocker_id", blocker_id).eq("blocked_user_id", blocked_user_id).execute()
     except Exception:
         pass
 
@@ -351,7 +353,7 @@ def get_blocked_user_ids(user_id: str) -> List[str]:
 
 def report_user(reporter_id: str, reported_user_id: str, reason: str, details: str = ""):
     try:
-        get_client().table("reports").insert({
+        get_service_client().table("reports").insert({
             "reporter_id": reporter_id,
             "reported_user_id": reported_user_id,
             "reason": reason,
@@ -380,7 +382,7 @@ def get_notifications(user_id: str, limit: int = 20) -> List[Dict]:
 
 def mark_notifications_read(user_id: str):
     try:
-        get_client().table("notifications").update({"is_read": True}).eq("user_id", user_id).execute()
+        get_service_client().table("notifications").update({"is_read": True}).eq("user_id", user_id).execute()
     except Exception:
         pass
 
@@ -415,7 +417,7 @@ def get_events(limit: int = 20) -> List[Dict]:
 
 def create_event(data: Dict) -> Optional[Dict]:
     try:
-        res = get_client().table("events").insert(data).execute()
+        res = get_service_client().table("events").insert(data).execute()
         return res.data[0] if res.data else None
     except Exception:
         return None
@@ -423,7 +425,7 @@ def create_event(data: Dict) -> Optional[Dict]:
 
 def join_event(event_id: str, user_id: str):
     try:
-        get_client().table("event_attendees").insert({
+        get_service_client().table("event_attendees").insert({
             "event_id": event_id, "user_id": user_id,
         }).execute()
     except Exception:
@@ -432,7 +434,7 @@ def join_event(event_id: str, user_id: str):
 
 def leave_event(event_id: str, user_id: str):
     try:
-        get_client().table("event_attendees").delete().eq("event_id", event_id).eq("user_id", user_id).execute()
+        get_service_client().table("event_attendees").delete().eq("event_id", event_id).eq("user_id", user_id).execute()
     except Exception:
         pass
 

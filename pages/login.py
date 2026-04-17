@@ -64,12 +64,18 @@ def render():
                     result = login_user(email, password)
                 if result["success"]:
                     set_session(result["user"], result.get("session"))
-                    st.success("Welcome back! 🎉")
+                    st.success("Welcome back!")
                     redirect = st.session_state.pop("redirect_after_login", "home")
                     st.query_params["page"] = redirect
                     st.rerun()
                 else:
-                    st.error(result["error"])
+                    err = result["error"]
+                    st.error(err)
+                    if "profile not found" in err.lower() or "could not load" in err.lower():
+                        st.info(
+                            "Your account exists but your profile data is missing. "
+                            "This can be fixed automatically - click Login again and it will rebuild your profile."
+                        )
 
     st.markdown('<div class="auth-divider">── OR ──</div>', unsafe_allow_html=True)
 

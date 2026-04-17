@@ -349,9 +349,13 @@ def render():
 
     # ── PHOTOS TAB ──────────────────────────────────────────────────────────
     with tab_photos:
-        st.markdown('<div class="section-card"><div class="section-title">📸 Profile Photos</div>', unsafe_allow_html=True)
-
         from utils.media import test_storage_connection
+        import io
+
+        # Key counter lets us reset the file uploader after a successful upload
+        if "uploader_key" not in st.session_state:
+            st.session_state.uploader_key = 0
+
         storage_ok = test_storage_connection()
         if not storage_ok:
             st.warning(
@@ -364,34 +368,54 @@ def render():
                 "Then come back here and upload your photo."
             )
 
-        photos = user.get("photos") or []
-        if user.get("photo_url") and user["photo_url"] not in photos:
-            photos = [user["photo_url"]] + photos
+        # Build canonical photo list (deduplicated, main photo always first)
+        photos = list(user.get("photos") or [])
+        main   = user.get("photo_url")
+        if main and main not in photos:
+            photos.insert(0, main)
+
+        # ── Current photos grid with remove buttons ──────────────────────
+        st.markdown('<div class="section-card"><div class="section-title">📸 Your Photos</div>', unsafe_allow_html=True)
 
         if photos:
-            st.markdown("**Your Photos**")
             cols = st.columns(3)
-            for i, photo in enumerate(photos[:6]):
+            for i, photo_url in enumerate(photos[:6]):
                 with cols[i % 3]:
-                    st.image(photo, use_container_width=True)
-                    if i == 0:
-                        st.caption("⭐ Main photo")
+                    st.image(photo_url, use_container_width=True)
+                    label = "⭐ Main" if i == 0 else f"Photo {i + 1}"
+                    st.caption(label)
+                    if st.button("🗑️ Remove", key=f"remove_photo_{i}", use_container_width=True):
+                        new_photos = [p for p in photos if p != photo_url]
+                        updates = {"photos": new_photos}
+                        # If we removed the main photo, promote the next one (or clear it)
+                        if photo_url == main:
+                            updates["photo_url"] = new_photos[0] if new_photos else None
+                        ok, err = _save_profile(uid, updates)
+                        if ok:
+                            refresh_session_user()
+                            st.success("Photo removed.")
+                            st.rerun()
+                        else:
+                            st.error(f"Could not remove photo: {err}")
         else:
             st.info("No photos yet. Upload your first photo below!")
 
-        st.markdown("---")
-        st.markdown("**Upload New Photo**")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        # ── Upload section ───────────────────────────────────────────────
+        st.markdown('<div class="section-card"><div class="section-title">⬆️ Upload New Photo</div>', unsafe_allow_html=True)
+
         uploaded = st.file_uploader(
-            "Choose a photo (JPG, PNG, WEBP)",
+            "Choose a photo (JPG, PNG, WEBP) — max 5 MB",
             type=["jpg", "jpeg", "png", "webp"],
             accept_multiple_files=False,
-            key="photo_upload",
+            key=f"photo_upload_{st.session_state.uploader_key}",
         )
 
         if uploaded:
+            # Resize / compress
             try:
                 from PIL import Image
-                import io
                 img = Image.open(uploaded)
                 img = img.convert("RGB")
                 img.thumbnail((800, 800))
@@ -401,11 +425,16 @@ def render():
             except Exception:
                 img_bytes = uploaded.getvalue()
 
-            c1, c2 = st.columns(2)
+            c1, c2 = st.columns([1, 1])
             with c1:
                 st.image(img_bytes, caption="Preview", use_container_width=True)
             with c2:
-                set_as_main = st.checkbox("Set as main profile photo", value=len(photos) == 0)
+                set_as_main = st.checkbox(
+                    "Set as main profile photo",
+                    value=len(photos) == 0,
+                    key="set_as_main_chk",
+                )
+                st.write("")  # spacer
                 if st.button("⬆️ Upload Photo", type="primary", use_container_width=True):
                     if not storage_ok:
                         st.error("Set up Supabase Storage bucket first (see instructions above).")
@@ -413,17 +442,20 @@ def render():
                         with st.spinner("Uploading…"):
                             url = upload_image(img_bytes, uid)
                         if url:
-                            new_photos = list(photos) + [url]
+                            # Avoid duplicates
+                            new_photos = photos + ([url] if url not in photos else [])
                             updates = {"photos": new_photos}
                             if set_as_main or not user.get("photo_url"):
                                 updates["photo_url"] = url
                             ok, err = _save_profile(uid, updates)
                             if ok:
                                 refresh_session_user()
+                                # Rotate key → clears the file uploader widget
+                                st.session_state.uploader_key += 1
                                 st.success("✅ Photo uploaded!")
                                 st.rerun()
                             else:
-                                st.error(f"Upload failed: {err}")
+                                st.error(f"Save failed: {err}")
                         else:
                             st.error("Upload failed — check your storage bucket settings.")
 

@@ -1,6 +1,6 @@
 """
 pages/events.py
-Events — create and join meetups
+Events - create and join meetups
 """
 
 import streamlit as st

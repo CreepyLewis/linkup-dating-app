@@ -1,11 +1,13 @@
 """
 utils/auth.py
-Authentication - register, login, logout, session management.
-Uses regular sign_up (works on all Supabase plans).
-Email confirmation is disabled via Supabase dashboard.
+Custom authentication - no Supabase Auth service.
+Passwords stored as bcrypt hashes in public.users table.
+No email confirmation, no rate limits, no admin API needed.
 """
 
 import os
+import uuid
+import bcrypt
 import streamlit as st
 from typing import Optional, Dict
 from dotenv import load_dotenv
@@ -13,19 +15,30 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-def _anon():
-    from utils.db import get_client
-    return get_client()
-
-
-def _svc():
+def _db():
     from utils.db import get_service_client
     return get_service_client()
+
+
+# ── Helpers ────────────────────────────────────────────────────────────────────
+
+def _hash(password: str) -> str:
+    return bcrypt.hashpw(password.encode(), bcrypt.gensalt(rounds=10)).decode()
+
+def _verify(password: str, hashed: str) -> bool:
+    try:
+        return bcrypt.checkpw(password.encode(), hashed.encode())
+    except Exception:
+        return False
 
 
 # ── Register ───────────────────────────────────────────────────────────────────
 
 def register_user(email: str, password: str, name: str, age: int, gender: str) -> Dict:
+    """
+    Create a new user directly in public.users.
+    No Supabase Auth service - no email confirmation, no rate limits.
+    """
     email = email.strip().lower()
 
     if not email or "@" not in email:
@@ -37,173 +50,117 @@ def register_user(email: str, password: str, name: str, age: int, gender: str) -
     if not (18 <= int(age) <= 100):
         return {"success": False, "error": "You must be at least 18 years old."}
 
-    auth_user = None
+    db = _db()
 
-    # Try admin API first (auto-confirms, no rate limit)
+    # Check if email already exists
     try:
-        res = _svc().auth.admin.create_user({
-            "email": email,
-            "password": password,
-            "email_confirm": True,
-            "user_metadata": {"name": name, "age": int(age), "gender": gender},
-        })
-        auth_user = res.user
-    except Exception as admin_err:
-        admin_msg = str(admin_err).lower()
-        if "already" in admin_msg or "duplicate" in admin_msg or "registered" in admin_msg:
+        existing = db.table("users").select("id").eq("email", email).execute()
+        if existing.data:
             return {"success": False, "error": "Email already registered. Try logging in."}
-        # Admin API not available - fall through to regular sign_up
-        auth_user = None
+    except Exception as e:
+        return {"success": False, "error": f"Database error: {e}"}
 
-    # Fallback: regular sign_up
-    if not auth_user:
-        try:
-            res = _anon().auth.sign_up({
-                "email": email,
-                "password": password,
-                "options": {"data": {"name": name, "age": int(age), "gender": gender}},
-            })
-            auth_user = res.user
-        except Exception as e:
-            msg = str(e).lower()
-            if "already" in msg or "registered" in msg:
-                return {"success": False, "error": "Email already registered. Try logging in."}
-            if "rate" in msg and "limit" in msg:
-                return {
-                    "success": False,
-                    "error": (
-                        "Too many signups from this network.\n\n"
-                        "Fix: Go to Supabase Dashboard → Authentication → Providers → Email → "
-                        "turn OFF 'Confirm email' → Save. Then try again."
-                    ),
-                }
-            return {"success": False, "error": f"Signup failed: {e}"}
-
-    if not auth_user:
-        return {"success": False, "error": "Could not create account. Please try again."}
-
-    # Insert profile row using service role (bypasses RLS)
-    profile_data = {
-        "id":         auth_user.id,
-        "email":      email,
-        "name":       name.strip(),
-        "age":        int(age),
-        "gender":     gender,
-        "intent":     "dating",
-        "is_active":  True,
-        "is_premium": False,
+    # Create user row
+    user_id = str(uuid.uuid4())
+    profile = {
+        "id":            user_id,
+        "email":         email,
+        "name":          name.strip(),
+        "age":           int(age),
+        "gender":        gender,
+        "password_hash": _hash(password),
+        "intent":        "dating",
+        "is_active":     True,
+        "is_premium":    False,
     }
+
     try:
-        res = _svc().table("users").insert(profile_data).execute()
-        profile = res.data[0] if res.data else profile_data
+        res = db.table("users").insert(profile).execute()
+        created = res.data[0] if res.data else profile
+        return {"success": True, "user": created}
     except Exception as e:
         msg = str(e).lower()
-        # Profile row already exists (trigger may have created it) - just fetch it
         if "duplicate" in msg or "unique" in msg or "already exists" in msg:
-            try:
-                r2 = _svc().table("users").select("*").eq("id", auth_user.id).execute()
-                profile = r2.data[0] if r2.data else profile_data
-            except Exception:
-                profile = profile_data
-        else:
-            profile = profile_data  # Auth succeeded; profile insert failed silently
-
-    return {"success": True, "user": profile}
+            return {"success": False, "error": "Email already registered. Try logging in."}
+        return {"success": False, "error": f"Could not create account: {e}"}
 
 
 # ── Login ──────────────────────────────────────────────────────────────────────
 
 def login_user(email: str, password: str) -> Dict:
+    """
+    Sign in by checking bcrypt hash directly in public.users.
+    No Supabase Auth service needed.
+    """
     email = email.strip().lower()
     if not email or not password:
         return {"success": False, "error": "Email and password are required."}
 
+    db = _db()
+
     try:
-        res     = _anon().auth.sign_in_with_password({"email": email, "password": password})
-        session = res.session
-        user    = res.user
-        if not user:
-            return {"success": False, "error": "Invalid credentials."}
+        res = db.table("users").select("*").eq("email", email).execute()
     except Exception as e:
-        msg = str(e).lower()
-        if "invalid" in msg or "credentials" in msg or "wrong" in msg:
-            return {"success": False, "error": "Wrong email or password."}
-        if "not confirmed" in msg or "confirm" in msg:
-            return {
-                "success": False,
-                "error": (
-                    "Email not confirmed.\n"
-                    "Fix: Supabase Dashboard → Authentication → Providers → Email → "
-                    "turn OFF 'Confirm email' → Save. Then try again."
-                ),
-            }
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": f"Database error: {e}"}
 
-    # Fetch profile via service role (bypasses RLS)
-    profile = None
-    try:
-        r = _svc().table("users").select("*").eq("id", user.id).execute()
-        profile = r.data[0] if r.data else None
-    except Exception:
-        pass
+    if not res.data:
+        return {"success": False, "error": "No account found with that email."}
 
-    # Auto-heal missing profile
-    if not profile:
-        profile = _rebuild_profile(user)
+    profile = res.data[0]
 
-    if not profile:
-        return {"success": False, "error": "Profile missing. Please register again."}
+    # Check password
+    stored_hash = profile.get("password_hash") or ""
+    if not stored_hash:
+        return {"success": False, "error": "Account has no password set. Use 'Forgot Password'."}
+
+    if not _verify(password, stored_hash):
+        return {"success": False, "error": "Wrong password."}
 
     if not profile.get("is_active", True):
         return {"success": False, "error": "Your account has been suspended."}
 
-    # Bump last_seen
+    # Update last seen
     try:
         from datetime import datetime, timezone
-        _svc().table("users").update(
+        db.table("users").update(
             {"last_seen": datetime.now(timezone.utc).isoformat()}
-        ).eq("id", user.id).execute()
+        ).eq("id", profile["id"]).execute()
     except Exception:
         pass
 
-    return {"success": True, "user": profile, "session": session}
-
-
-def _rebuild_profile(auth_user) -> Optional[Dict]:
-    """Recreate a missing profile row from auth metadata."""
-    try:
-        meta = auth_user.user_metadata or {}
-        data = {
-            "id":         auth_user.id,
-            "email":      auth_user.email,
-            "name":       meta.get("name") or auth_user.email.split("@")[0].title(),
-            "age":        int(meta.get("age") or 25),
-            "gender":     meta.get("gender") or "other",
-            "intent":     "dating",
-            "is_active":  True,
-            "is_premium": False,
-        }
-        r = _svc().table("users").insert(data).execute()
-        return r.data[0] if r.data else data
-    except Exception:
-        return None
+    return {"success": True, "user": profile, "session": None}
 
 
 # ── Logout ─────────────────────────────────────────────────────────────────────
 
 def logout_user():
-    try:
-        _anon().auth.sign_out()
-    except Exception:
-        pass
     _clear_session()
 
 
 # ── Password reset ─────────────────────────────────────────────────────────────
 
 def request_password_reset(email: str) -> Dict:
+    """
+    For now: confirm the email exists. 
+    Full reset requires email service (future feature).
+    """
+    email = email.strip().lower()
     try:
-        _anon().auth.reset_password_email(email.strip())
+        res = _db().table("users").select("id").eq("email", email).execute()
+        if res.data:
+            return {"success": True}
+        return {"success": False, "error": "No account with that email."}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+def update_password(user_id: str, new_password: str) -> Dict:
+    if len(new_password) < 6:
+        return {"success": False, "error": "Password must be at least 6 characters."}
+    try:
+        _db().table("users").update(
+            {"password_hash": _hash(new_password)}
+        ).eq("id", user_id).execute()
         return {"success": True}
     except Exception as e:
         return {"success": False, "error": str(e)}
@@ -212,16 +169,12 @@ def request_password_reset(email: str) -> Dict:
 # ── Session ────────────────────────────────────────────────────────────────────
 
 SESSION_KEY = "linkup_user"
-TOKEN_KEY   = "linkup_token"
 
 
 def set_session(user: Dict, session=None):
-    st.session_state[SESSION_KEY] = user
-    if session:
-        try:
-            st.session_state[TOKEN_KEY] = session.access_token
-        except Exception:
-            pass
+    # Never store password_hash in session
+    safe = {k: v for k, v in user.items() if k != "password_hash"}
+    st.session_state[SESSION_KEY] = safe
 
 
 def get_session_user() -> Optional[Dict]:
@@ -237,7 +190,7 @@ def refresh_session_user():
     if not user:
         return
     try:
-        r = _svc().table("users").select("*").eq("id", user["id"]).execute()
+        r = _db().table("users").select("*").eq("id", user["id"]).execute()
         if r.data:
             set_session(r.data[0])
     except Exception:
@@ -245,8 +198,8 @@ def refresh_session_user():
 
 
 def _clear_session():
-    for k in [SESSION_KEY, TOKEN_KEY, "discover_index",
-              "discover_profiles", "active_match_id", "active_match_user"]:
+    for k in [SESSION_KEY, "discover_index", "discover_profiles",
+              "active_match_id", "active_match_user"]:
         st.session_state.pop(k, None)
 
 
@@ -265,3 +218,8 @@ def is_premium() -> bool:
 def is_admin() -> bool:
     u = get_session_user()
     return bool(u and u.get("is_admin"))
+
+
+# Keep these so settings.py password-change still works
+def hash_password(p: str) -> str: return _hash(p)
+def verify_password(p: str, h: str) -> bool: return _verify(p, h)

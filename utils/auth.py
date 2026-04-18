@@ -1,7 +1,8 @@
 """
 utils/auth.py
 Authentication - register, login, logout, session management.
-Uses service role key for DB writes to bypass RLS.
+Uses regular sign_up (works on all Supabase plans).
+Email confirmation is disabled via Supabase dashboard.
 """
 
 import os
@@ -12,33 +13,21 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-# ── Password hashing ──────────────────────────────────────────────────────────
-
-def hash_password(password: str) -> str:
-    import bcrypt
-    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
-
-
-# ── Supabase clients ──────────────────────────────────────────────────────────
-
-def _anon_client():
+def _anon():
     from utils.db import get_client
     return get_client()
 
 
-def _service_client():
-    """Service role client - bypasses RLS for all DB writes."""
+def _svc():
     from utils.db import get_service_client
     return get_service_client()
 
 
-# ── Registration ──────────────────────────────────────────────────────────────
+# ── Register ───────────────────────────────────────────────────────────────────
 
 def register_user(email: str, password: str, name: str, age: int, gender: str) -> Dict:
-    """
-    Create Supabase Auth user + profile row.
-    Uses service role to bypass RLS on INSERT.
-    """
+    email = email.strip().lower()
+
     if not email or "@" not in email:
         return {"success": False, "error": "Invalid email address."}
     if len(password) < 6:
@@ -48,148 +37,189 @@ def register_user(email: str, password: str, name: str, age: int, gender: str) -
     if not (18 <= int(age) <= 100):
         return {"success": False, "error": "You must be at least 18 years old."}
 
+    auth_user = None
+
+    # Try admin API first (auto-confirms, no rate limit)
     try:
-        # Use service role to create auth user - skips email confirmation entirely
-        svc = _service_client()
-        auth_res = svc.auth.admin.create_user({
+        res = _svc().auth.admin.create_user({
             "email": email,
             "password": password,
-            "email_confirm": True,   # auto-confirm - no email needed
-            "user_metadata": {"name": name, "age": age, "gender": gender},
+            "email_confirm": True,
+            "user_metadata": {"name": name, "age": int(age), "gender": gender},
         })
-        auth_user = auth_res.user
-        if not auth_user:
-            return {"success": False, "error": "Registration failed. Try again."}
+        auth_user = res.user
+    except Exception as admin_err:
+        admin_msg = str(admin_err).lower()
+        if "already" in admin_msg or "duplicate" in admin_msg or "registered" in admin_msg:
+            return {"success": False, "error": "Email already registered. Try logging in."}
+        # Admin API not available - fall through to regular sign_up
+        auth_user = None
 
-        # Insert profile using service role (bypasses RLS)
-        profile_data = {
-            "id": auth_user.id,
-            "email": email,
-            "name": name.strip(),
-            "age": int(age),
-            "gender": gender,
-            "intent": "dating",
-            "is_active": True,
-            "is_premium": False,
-        }
-        res = svc.table("users").insert(profile_data).execute()
+    # Fallback: regular sign_up
+    if not auth_user:
+        try:
+            res = _anon().auth.sign_up({
+                "email": email,
+                "password": password,
+                "options": {"data": {"name": name, "age": int(age), "gender": gender}},
+            })
+            auth_user = res.user
+        except Exception as e:
+            msg = str(e).lower()
+            if "already" in msg or "registered" in msg:
+                return {"success": False, "error": "Email already registered. Try logging in."}
+            if "rate" in msg and "limit" in msg:
+                return {
+                    "success": False,
+                    "error": (
+                        "Too many signups from this network.\n\n"
+                        "Fix: Go to Supabase Dashboard → Authentication → Providers → Email → "
+                        "turn OFF 'Confirm email' → Save. Then try again."
+                    ),
+                }
+            return {"success": False, "error": f"Signup failed: {e}"}
+
+    if not auth_user:
+        return {"success": False, "error": "Could not create account. Please try again."}
+
+    # Insert profile row using service role (bypasses RLS)
+    profile_data = {
+        "id":         auth_user.id,
+        "email":      email,
+        "name":       name.strip(),
+        "age":        int(age),
+        "gender":     gender,
+        "intent":     "dating",
+        "is_active":  True,
+        "is_premium": False,
+    }
+    try:
+        res = _svc().table("users").insert(profile_data).execute()
         profile = res.data[0] if res.data else profile_data
-
-        return {"success": True, "user": profile}
-
     except Exception as e:
-        err = str(e)
-        if "already registered" in err.lower() or "already been registered" in err.lower() or "duplicate" in err.lower():
-            return {"success": False, "error": "This email is already registered. Try logging in instead."}
-        if "rate" in err.lower() and "limit" in err.lower():
-            return {"success": False, "error": "Too many attempts. Wait a few minutes and try again."}
-        return {"success": False, "error": err}
+        msg = str(e).lower()
+        # Profile row already exists (trigger may have created it) - just fetch it
+        if "duplicate" in msg or "unique" in msg or "already exists" in msg:
+            try:
+                r2 = _svc().table("users").select("*").eq("id", auth_user.id).execute()
+                profile = r2.data[0] if r2.data else profile_data
+            except Exception:
+                profile = profile_data
+        else:
+            profile = profile_data  # Auth succeeded; profile insert failed silently
+
+    return {"success": True, "user": profile}
 
 
 # ── Login ──────────────────────────────────────────────────────────────────────
 
 def login_user(email: str, password: str) -> Dict:
-    """
-    Sign in. If profile row is missing (can happen), auto-creates it.
-    """
+    email = email.strip().lower()
     if not email or not password:
         return {"success": False, "error": "Email and password are required."}
 
     try:
-        # Sign in with anon client
-        auth_res = _anon_client().auth.sign_in_with_password({
-            "email": email, "password": password
-        })
-        auth_user = auth_res.user
-        session   = auth_res.session
-
-        if not auth_user:
+        res     = _anon().auth.sign_in_with_password({"email": email, "password": password})
+        session = res.session
+        user    = res.user
+        if not user:
             return {"success": False, "error": "Invalid credentials."}
-
-        # Fetch profile using service client (bypasses RLS read restrictions)
-        svc = _service_client()
-        res = svc.table("users").select("*").eq("id", auth_user.id).execute()
-        profile = res.data[0] if res.data else None
-
-        # Auto-heal: profile row missing (common after RLS blocks registration)
-        if not profile:
-            profile = _auto_create_profile(svc, auth_user)
-
-        if not profile:
-            return {"success": False, "error": "Could not load profile. Try registering again."}
-
-        if not profile.get("is_active", True):
-            return {"success": False, "error": "Your account has been suspended."}
-
-        # Update last seen
-        try:
-            from datetime import datetime, timezone
-            svc.table("users").update({"last_seen": datetime.now(timezone.utc).isoformat()}).eq("id", auth_user.id).execute()
-        except Exception:
-            pass
-
-        return {"success": True, "user": profile, "session": session}
-
     except Exception as e:
-        err = str(e).lower()
-        if "invalid" in err or "credentials" in err or "wrong" in err:
+        msg = str(e).lower()
+        if "invalid" in msg or "credentials" in msg or "wrong" in msg:
             return {"success": False, "error": "Wrong email or password."}
-        if "email not confirmed" in err:
-            return {"success": False, "error": "Email not confirmed. Check your inbox or contact support."}
+        if "not confirmed" in msg or "confirm" in msg:
+            return {
+                "success": False,
+                "error": (
+                    "Email not confirmed.\n"
+                    "Fix: Supabase Dashboard → Authentication → Providers → Email → "
+                    "turn OFF 'Confirm email' → Save. Then try again."
+                ),
+            }
         return {"success": False, "error": str(e)}
 
+    # Fetch profile via service role (bypasses RLS)
+    profile = None
+    try:
+        r = _svc().table("users").select("*").eq("id", user.id).execute()
+        profile = r.data[0] if r.data else None
+    except Exception:
+        pass
 
-def _auto_create_profile(svc, auth_user) -> Optional[Dict]:
-    """Create a profile row from auth user metadata when it's missing."""
+    # Auto-heal missing profile
+    if not profile:
+        profile = _rebuild_profile(user)
+
+    if not profile:
+        return {"success": False, "error": "Profile missing. Please register again."}
+
+    if not profile.get("is_active", True):
+        return {"success": False, "error": "Your account has been suspended."}
+
+    # Bump last_seen
+    try:
+        from datetime import datetime, timezone
+        _svc().table("users").update(
+            {"last_seen": datetime.now(timezone.utc).isoformat()}
+        ).eq("id", user.id).execute()
+    except Exception:
+        pass
+
+    return {"success": True, "user": profile, "session": session}
+
+
+def _rebuild_profile(auth_user) -> Optional[Dict]:
+    """Recreate a missing profile row from auth metadata."""
     try:
         meta = auth_user.user_metadata or {}
-        profile_data = {
-            "id": auth_user.id,
-            "email": auth_user.email,
-            "name": meta.get("name") or auth_user.email.split("@")[0],
-            "age": int(meta.get("age") or 25),
-            "gender": meta.get("gender") or "other",
-            "intent": "dating",
-            "is_active": True,
+        data = {
+            "id":         auth_user.id,
+            "email":      auth_user.email,
+            "name":       meta.get("name") or auth_user.email.split("@")[0].title(),
+            "age":        int(meta.get("age") or 25),
+            "gender":     meta.get("gender") or "other",
+            "intent":     "dating",
+            "is_active":  True,
             "is_premium": False,
         }
-        res = svc.table("users").insert(profile_data).execute()
-        return res.data[0] if res.data else profile_data
+        r = _svc().table("users").insert(data).execute()
+        return r.data[0] if r.data else data
     except Exception:
         return None
 
 
-# ── Logout ────────────────────────────────────────────────────────────────────
+# ── Logout ─────────────────────────────────────────────────────────────────────
 
 def logout_user():
     try:
-        _anon_client().auth.sign_out()
+        _anon().auth.sign_out()
     except Exception:
         pass
     _clear_session()
 
 
-# ── Password reset ────────────────────────────────────────────────────────────
+# ── Password reset ─────────────────────────────────────────────────────────────
 
 def request_password_reset(email: str) -> Dict:
     try:
-        _anon_client().auth.reset_password_email(email)
+        _anon().auth.reset_password_email(email.strip())
         return {"success": True}
     except Exception as e:
         return {"success": False, "error": str(e)}
 
 
-# ── Session helpers ───────────────────────────────────────────────────────────
+# ── Session ────────────────────────────────────────────────────────────────────
 
-SESSION_KEY       = "linkup_user"
-SESSION_TOKEN_KEY = "linkup_token"
+SESSION_KEY = "linkup_user"
+TOKEN_KEY   = "linkup_token"
 
 
 def set_session(user: Dict, session=None):
     st.session_state[SESSION_KEY] = user
     if session:
         try:
-            st.session_state[SESSION_TOKEN_KEY] = session.access_token
+            st.session_state[TOKEN_KEY] = session.access_token
         except Exception:
             pass
 
@@ -203,24 +233,21 @@ def is_authenticated() -> bool:
 
 
 def refresh_session_user():
-    """Re-fetch user from DB and update session state."""
     user = get_session_user()
     if not user:
         return
     try:
-        svc = _service_client()
-        res = svc.table("users").select("*").eq("id", user["id"]).execute()
-        if res.data:
-            set_session(res.data[0])
+        r = _svc().table("users").select("*").eq("id", user["id"]).execute()
+        if r.data:
+            set_session(r.data[0])
     except Exception:
         pass
 
 
 def _clear_session():
-    for key in [SESSION_KEY, SESSION_TOKEN_KEY, "discover_index",
-                "current_profiles", "active_match_id", "active_match_user",
-                "discover_profiles"]:
-        st.session_state.pop(key, None)
+    for k in [SESSION_KEY, TOKEN_KEY, "discover_index",
+              "discover_profiles", "active_match_id", "active_match_user"]:
+        st.session_state.pop(k, None)
 
 
 def require_auth():
@@ -231,10 +258,10 @@ def require_auth():
 
 
 def is_premium() -> bool:
-    user = get_session_user()
-    return bool(user and user.get("is_premium"))
+    u = get_session_user()
+    return bool(u and u.get("is_premium"))
 
 
 def is_admin() -> bool:
-    user = get_session_user()
-    return bool(user and user.get("is_admin"))
+    u = get_session_user()
+    return bool(u and u.get("is_admin"))

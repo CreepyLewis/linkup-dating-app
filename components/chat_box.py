@@ -133,19 +133,24 @@ def render_chat_box(match_id: str, current_user: Dict, other_user: Dict):
     st.markdown("---")
     col1, col2, col3 = st.columns([5, 1, 1])
 
+    # Use a counter key so the input resets cleanly after sending
+    input_key = f"msg_input_{match_id}_{st.session_state.get('msg_counter_' + match_id, 0)}"
+
     with col1:
         msg_text = st.text_input(
             "Message",
             placeholder=f"Message {other_user.get('name','?')}...",
             label_visibility="collapsed",
-            key=f"msg_input_{match_id}",
+            key=input_key,
         )
 
     with col2:
         if st.button("📤 Send", key=f"send_{match_id}", use_container_width=True, type="primary"):
             if msg_text.strip():
                 send_message(match_id, uid, other_id, msg_text.strip())
-                st.session_state[f"msg_input_{match_id}"] = ""
+                # Increment counter → new key → input clears itself
+                counter_key = f"msg_counter_{match_id}"
+                st.session_state[counter_key] = st.session_state.get(counter_key, 0) + 1
                 st.rerun()
 
     with col3:

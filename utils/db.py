@@ -208,6 +208,24 @@ def pass_user(user_id: str, passed_user_id: str):
         pass
 
 
+def super_like_user(user_id: str, liked_user_id: str) -> bool:
+    """Super like - same as like but sends a special notification."""
+    is_match = like_user(user_id, liked_user_id)
+    try:
+        # Notify the liked user that they got a super like
+        get_service_client().table("notifications").upsert({
+            "user_id": liked_user_id,
+            "type": "like",
+            "title": "⚡ Someone Super Liked you!",
+            "body": "You got a Super Like! Check who it is.",
+            "related_user_id": user_id,
+            "is_read": False,
+        }, on_conflict="user_id,type,related_user_id").execute()
+    except Exception:
+        pass
+    return is_match
+
+
 def undo_last_action(user_id: str):
     try:
         get_service_client().table("likes").delete().eq("user_id", user_id).order("created_at", desc=True).limit(1).execute()

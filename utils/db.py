@@ -129,6 +129,14 @@ def get_discover_profiles(current_user: Dict, limit: int = 20) -> List[Dict]:
     )
 
     pref = current_user.get("gender_preference", "any")
+    # Default: show opposite gender automatically
+    if not pref or pref == "any":
+        my_gender = current_user.get("gender", "")
+        if my_gender == "male":
+            pref = "female"
+        elif my_gender == "female":
+            pref = "male"
+        # non-binary/other stays as "any"
     if pref and pref != "any":
         query = query.eq("gender", pref)
 

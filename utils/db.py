@@ -111,14 +111,13 @@ def get_profile_completion(user: Dict) -> int:
 # DISCOVERY
 
 def get_discover_profiles(current_user: Dict, limit: int = 20) -> List[Dict]:
-    """Return candidate profiles for discovery, filtered and ranked."""
+    """Return candidate profiles for discovery."""
     db = get_client()
     uid = current_user["id"]
 
-    liked_ids = set(get_liked_user_ids(uid))
-    passed_ids = set(get_passed_user_ids(uid))
+    # Only exclude blocked users - NOT liked/passed, so profiles show again
     blocked_ids = set(get_blocked_user_ids(uid))
-    exclude_ids = {uid} | liked_ids | passed_ids | blocked_ids
+    exclude_ids = {uid} | blocked_ids
 
     query = (
         db.table("users")
@@ -128,15 +127,14 @@ def get_discover_profiles(current_user: Dict, limit: int = 20) -> List[Dict]:
         .neq("id", uid)
     )
 
+    # Gender filter - default to opposite gender
     pref = current_user.get("gender_preference", "any")
-    # Default: show opposite gender automatically
     if not pref or pref == "any":
         my_gender = current_user.get("gender", "")
         if my_gender == "male":
             pref = "female"
         elif my_gender == "female":
             pref = "male"
-        # non-binary/other stays as "any"
     if pref and pref != "any":
         query = query.eq("gender", pref)
 
@@ -144,8 +142,8 @@ def get_discover_profiles(current_user: Dict, limit: int = 20) -> List[Dict]:
     age_max = current_user.get("age_max") or 60
     query = query.gte("age", age_min).lte("age", age_max)
 
-    intent = current_user.get("intent") or "dating"
-    query = query.eq("intent", intent)
+    # Remove intent filter - show all intents so more profiles appear
+    # Users can still filter by intent in preferences
 
     res = query.limit(limit + len(exclude_ids) + 10).execute()
     candidates = [u for u in (res.data or []) if u["id"] not in exclude_ids]

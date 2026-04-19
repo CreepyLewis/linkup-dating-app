@@ -44,32 +44,43 @@ def route():
     page = st.query_params.get("page", "login")
 
     if page == "login":
-        from pages.login import render; render()
+        from pages.login import render
+        render()
     elif page == "register":
-        from pages.register import render; render()
+        from pages.register import render
+        render()
     elif page == "reset_password":
-        from pages.reset_password import render; render()
+        from pages.reset_password import render
+        render()
     else:
         # All protected pages get navbar
         from components.navbar import render_navbar
         render_navbar()
 
         if page == "home":
-            from pages.home import render; render()
+            from pages.home import render
+            render()
         elif page == "discover":
-            from pages.discover import render; render()
+            from pages.discover import render
+            render()
         elif page == "matches":
-            from pages.matches import render; render()
+            from pages.matches import render
+            render()
         elif page == "chat":
-            from pages.chat import render; render()
+            from pages.chat import render
+            render()
         elif page == "profile":
-            from pages.profile import render; render()
+            from pages.profile import render
+            render()
         elif page == "settings":
-            from pages.settings import render; render()
+            from pages.settings import render
+            render()
         elif page == "events":
-            from pages.events import render; render()
+            from pages.events import render
+            render()
         elif page == "admin":
-            from pages.admin import render; render()
+            from pages.admin import render
+            render()
         else:
             st.error("Page not found.")
             if st.button("Go Home"):

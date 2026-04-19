@@ -96,3 +96,6 @@ def _fmt_time(ts: str) -> str:
         return dt.strftime("%b %d")
     except Exception:
         return ""
+
+# Alias for backwards compatibility
+_format_time = _fmt_time

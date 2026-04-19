@@ -155,7 +155,7 @@ def render():
     <div class="profile-page-hero">
         <img class="profile-hero-avatar" src="{img_url}" alt="{user.get('name','?')}">
         <div style="flex:1; min-width:0;">
-            <p class="profile-hero-name">{user.get('name','Your Name')}</p>
+            <p class="profile-hero-name">{user.get('name','Your Name')}{'  ✓' if user.get('is_verified') else ''}</p>
             <p class="profile-hero-meta">
                 {user.get('age','?')} yrs &nbsp;·&nbsp;
                 {user.get('gender','').capitalize()} &nbsp;·&nbsp;

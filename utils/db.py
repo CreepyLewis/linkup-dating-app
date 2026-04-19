@@ -180,22 +180,30 @@ def get_distance_km(lat1, lon1, lat2, lon2) -> Optional[float]:
 # LIKES / PASSES
 
 def like_user(user_id: str, liked_user_id: str) -> bool:
-    """Like a user. Returns True if mutual match created."""
+    """Like a user (upsert - safe to call multiple times). Returns True if mutual match."""
     try:
-        get_service_client().table("likes").insert({
+        # Remove any existing pass for this person first
+        get_service_client().table("passes").delete()            .eq("user_id", user_id).eq("passed_user_id", liked_user_id).execute()
+        # Upsert the like
+        get_service_client().table("likes").upsert({
             "user_id": user_id, "liked_user_id": liked_user_id,
-        }).execute()
-        res = get_client().table("likes").select("id").eq("user_id", liked_user_id).eq("liked_user_id", user_id).execute()
+        }, on_conflict="user_id,liked_user_id").execute()
+        # Check for mutual like
+        res = get_client().table("likes").select("id")            .eq("user_id", liked_user_id).eq("liked_user_id", user_id).execute()
         return bool(res.data)
     except Exception:
         return False
 
 
 def pass_user(user_id: str, passed_user_id: str):
+    """Pass a user (upsert - safe to call multiple times)."""
     try:
-        get_service_client().table("passes").insert({
+        # Remove any existing like for this person first
+        get_service_client().table("likes").delete()            .eq("user_id", user_id).eq("liked_user_id", passed_user_id).execute()
+        # Upsert the pass
+        get_service_client().table("passes").upsert({
             "user_id": user_id, "passed_user_id": passed_user_id,
-        }).execute()
+        }, on_conflict="user_id,passed_user_id").execute()
     except Exception:
         pass
 

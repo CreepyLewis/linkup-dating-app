@@ -1,108 +1,125 @@
 """
 utils/matching.py
-Smart matching score + compatibility helpers
+Match score as a real percentage + compatibility quiz helpers.
 """
 
 from typing import Dict, List
 from utils.db import get_distance_km
+from datetime import datetime, timezone, timedelta
 
 
-# ─── Core Match Score ─────────────────────────────────────────────────────────
+QUIZ_QUESTIONS = [
+    {
+        "id": "schedule",
+        "q":  "Are you a morning or night person?",
+        "options": ["Morning bird 🌅", "Night owl 🦉", "Depends on the day"],
+    },
+    {
+        "id": "social",
+        "q":  "Your ideal weekend is...",
+        "options": ["Out exploring 🌍", "Home relaxing 🏠", "Mix of both"],
+    },
+    {
+        "id": "ambition",
+        "q":  "Career vs personal life?",
+        "options": ["Career first 💼", "Life first 🌸", "Balance both ⚖️"],
+    },
+    {
+        "id": "kids",
+        "q":  "Do you want kids someday?",
+        "options": ["Yes 👶", "No", "Maybe / not sure"],
+    },
+    {
+        "id": "exercise",
+        "q":  "How active are you?",
+        "options": ["Very active 🏃", "Somewhat active 🚶", "Not really 🛋️"],
+    },
+]
+
 
 def calculate_match_score(user_a: Dict, user_b: Dict) -> float:
     """
-    Score = weighted sum of:
-      - Shared interests     (40%)
-      - Proximity            (30%)
-      - Activity recency     (20%)
-      - Completeness         (10%)
-    Returns float 0.0 - 100.0
+    Returns match percentage 0–100.
+    Weights: interests 35%, proximity 25%, activity 20%, quiz 15%, completeness 5%
     """
     score = 0.0
 
-    # 1. Shared interests (0-40)
-    interests_a = set(user_a.get("interests") or [])
-    interests_b = set(user_b.get("interests") or [])
-    if interests_a or interests_b:
-        shared = len(interests_a & interests_b)
-        total = len(interests_a | interests_b)
-        interest_score = (shared / total) * 40 if total > 0 else 0
+    # 1. Shared interests (0–35)
+    ia = set(user_a.get("interests") or [])
+    ib = set(user_b.get("interests") or [])
+    if ia or ib:
+        shared = len(ia & ib)
+        total  = len(ia | ib)
+        score += (shared / total) * 35 if total else 0
     else:
-        interest_score = 0
-    score += interest_score
+        score += 10  # neutral
 
-    # 2. Proximity (0-30)
-    lat_a = user_a.get("latitude")
-    lon_a = user_a.get("longitude")
-    lat_b = user_b.get("latitude")
-    lon_b = user_b.get("longitude")
-    dist = get_distance_km(lat_a, lon_a, lat_b, lon_b)
-    if dist is not None:
-        if dist <= 5:
-            prox_score = 30
-        elif dist <= 20:
-            prox_score = 20
-        elif dist <= 50:
-            prox_score = 10
-        else:
-            prox_score = max(0, 10 - (dist - 50) / 10)
-    else:
-        prox_score = 15  # unknown = neutral
-    score += prox_score
+    # 2. Proximity (0–25)
+    dist = get_distance_km(
+        user_a.get("latitude"), user_a.get("longitude"),
+        user_b.get("latitude"), user_b.get("longitude"),
+    )
+    if dist is None:
+        score += 12
+    elif dist <= 5:   score += 25
+    elif dist <= 20:  score += 20
+    elif dist <= 50:  score += 14
+    elif dist <= 100: score += 8
+    else:             score += 3
 
-    # 3. Activity recency (0-20)
-    from datetime import datetime, timezone, timedelta
-    last_seen_str = user_b.get("last_seen")
-    if last_seen_str:
-        try:
-            last_seen = datetime.fromisoformat(last_seen_str.replace("Z", "+00:00"))
-            delta = datetime.now(timezone.utc) - last_seen
-            if delta <= timedelta(hours=1):
-                score += 20
-            elif delta <= timedelta(days=1):
-                score += 15
-            elif delta <= timedelta(days=7):
-                score += 10
-            elif delta <= timedelta(days=30):
-                score += 5
-        except Exception:
-            score += 10
+    # 3. Activity recency (0–20)
+    ls = user_b.get("last_seen") or ""
+    try:
+        dt    = datetime.fromisoformat(ls.replace("Z", "+00:00"))
+        delta = datetime.now(timezone.utc) - dt
+        if   delta < timedelta(hours=1):   score += 20
+        elif delta < timedelta(days=1):    score += 15
+        elif delta < timedelta(days=7):    score += 8
+        elif delta < timedelta(days=30):   score += 3
+    except Exception:
+        score += 10
 
-    # 4. Profile completeness (0-10)
-    from utils.db import get_profile_completion
-    completeness = get_profile_completion(user_b)
-    score += (completeness / 100) * 10
+    # 4. Compatibility quiz (0–15)
+    qa = user_a.get("quiz_answers") or {}
+    qb = user_b.get("quiz_answers") or {}
+    if qa and qb:
+        common_qs = set(qa.keys()) & set(qb.keys())
+        if common_qs:
+            matches = sum(1 for k in common_qs if qa[k] == qb[k])
+            score  += (matches / len(common_qs)) * 15
+
+    # 5. Profile completeness (0–5)
+    fields = ["name","age","bio","photo_url","interests","location"]
+    filled = sum(1 for f in fields if user_b.get(f))
+    score += (filled / len(fields)) * 5
 
     return round(min(score, 100), 1)
 
 
-def rank_profiles(current_user: Dict, profiles: List[Dict]) -> List[Dict]:
-    """Sort profiles by match score (descending). Boosted users come first."""
-    for p in profiles:
-        p["_match_score"] = calculate_match_score(current_user, p)
-
-    # Boosted profiles go to top
-    boosted = [p for p in profiles if p.get("is_boosted")]
-    normal = [p for p in profiles if not p.get("is_boosted")]
-
-    boosted.sort(key=lambda x: x["_match_score"], reverse=True)
-    normal.sort(key=lambda x: x["_match_score"], reverse=True)
-
-    return boosted + normal
+def get_match_label(pct: float) -> tuple:
+    """Returns (emoji_label, colour) for a given percentage."""
+    if pct >= 85: return ("🔥 Hot match",   "#FF6B6B")
+    if pct >= 70: return ("✨ Great match",  "#FF8E53")
+    if pct >= 55: return ("👍 Good match",   "#F59E0B")
+    if pct >= 40: return ("🙂 Decent match", "#6B7280")
+    return           ("🤷 Low match",        "#9CA3AF")
 
 
 def get_compatibility_badge(score: float) -> str:
-    if score >= 80:
-        return "🔥 Great Match"
-    elif score >= 60:
-        return "✨ Good Match"
-    elif score >= 40:
-        return "👍 Decent Match"
-    else:
-        return "🤷 Low Match"
+    label, _ = get_match_label(score)
+    return label
 
 
 def get_common_interests(user_a: Dict, user_b: Dict) -> List[str]:
     a = set(user_a.get("interests") or [])
     b = set(user_b.get("interests") or [])
     return sorted(a & b)
+
+
+def rank_profiles(current_user: Dict, profiles: List[Dict]) -> List[Dict]:
+    """Sort by score descending; boosted users float to top."""
+    for p in profiles:
+        p["_score"] = calculate_match_score(current_user, p)
+    boosted = sorted([p for p in profiles if p.get("is_boosted")],  key=lambda x: x["_score"], reverse=True)
+    normal  = sorted([p for p in profiles if not p.get("is_boosted")], key=lambda x: x["_score"], reverse=True)
+    return boosted + normal

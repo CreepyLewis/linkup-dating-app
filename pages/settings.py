@@ -69,8 +69,8 @@ def render():
     </div>
     """, unsafe_allow_html=True)
 
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
-        "💎 Premium", "🔔 Notifications", "🛡️ Safety", "⚙️ Account", "🚪 Logout"
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+        "💎 Premium", "🔔 Notifications", "🛡️ Safety", "⚙️ Account", "🎨 Appearance", "🚪 Logout"
     ])
 
     # ── PREMIUM TAB ─────────────────────────────────────────────────────────
@@ -237,18 +237,18 @@ def render():
         with st.form("change_password"):
             new_pw = st.text_input("New Password", type="password")
             confirm_pw = st.text_input("Confirm New Password", type="password")
-            if st.form_submit_button("🔑 Update Password"):
+            if st.form_submit_button("Update Password"):
                 if not new_pw or len(new_pw) < 6:
                     st.error("Password must be at least 6 characters.")
                 elif new_pw != confirm_pw:
-                    st.error("Passwords don't match.")
+                    st.error("Passwords do not match.")
                 else:
-                    from utils.db import get_client
-                    try:
-                        get_client().auth.update_user({"password": new_pw})
+                    from utils.auth import update_password
+                    result = update_password(uid, new_pw)
+                    if result["success"]:
                         st.success("Password updated!")
-                    except Exception as e:
-                        st.error(str(e))
+                    else:
+                        st.error(result["error"])
 
         st.markdown("</div>", unsafe_allow_html=True)
 
@@ -262,8 +262,34 @@ def render():
             )
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # ── LOGOUT TAB ──────────────────────────────────────────────────────────
+    # ── APPEARANCE TAB ──────────────────────────────────────────────────────
     with tab5:
+        st.markdown('<div class="settings-section"><h3>🎨 Appearance</h3>', unsafe_allow_html=True)
+        st.markdown("**Theme**")
+        theme = st.radio(
+            "Choose theme",
+            ["Light 🌞", "Dark 🌙", "System default"],
+            index=st.session_state.get("theme_choice", 0),
+            horizontal=True,
+        )
+        if theme != st.session_state.get("theme_choice_label", "Light 🌞"):
+            st.session_state["theme_choice_label"] = theme
+            theme_map = {"Light 🌞": "light", "Dark 🌙": "dark", "System default": ""}
+            st.markdown(f"""
+            <script>
+            document.documentElement.setAttribute('data-theme', '{theme_map.get(theme, "")}');
+            localStorage.setItem('linkup_theme', '{theme_map.get(theme, "")}');
+            </script>
+            """, unsafe_allow_html=True)
+            st.success("Theme updated! Refresh the page to see the full effect.")
+
+        st.markdown("**Language**")
+        st.selectbox("App language", ["English 🇬🇧", "Swahili 🇰🇪"], key="app_language")
+        st.caption("More languages coming soon.")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    # ── LOGOUT TAB ──────────────────────────────────────────────────────────
+    with tab6:
         st.markdown("""
         <div style="text-align:center; padding:2rem;">
             <div style="font-size:4rem;">👋</div>

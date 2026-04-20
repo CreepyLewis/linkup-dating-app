@@ -11,6 +11,27 @@ from utils.filters import INTERESTS_LIST, INTENT_OPTIONS
 from components.profile_card import get_avatar_url, render_profile_card
 
 
+def _send_sms_code(user_id: str, phone: str):
+    """Send SMS via Africa's Talking. Returns code if sent, None if API not configured."""
+    import os, random
+    key = os.getenv("AFRICASTALKING_KEY", "")
+    username = os.getenv("AFRICASTALKING_USERNAME", "sandbox")
+    if not key:
+        return None
+    try:
+        import africastalking
+        africastalking.initialize(username, key)
+        sms = africastalking.SMS
+        code = random.randint(100000, 999999)
+        phone_fmt = phone.replace(" ","").replace("-","")
+        if phone_fmt.startswith("0"):
+            phone_fmt = "+254" + phone_fmt[1:]
+        sms.send(f"Your LinkUp verification code is: {code}", [phone_fmt])
+        return code
+    except Exception:
+        return None
+
+
 def _save_profile(uid, updates):
     """Try saving via update_user, fall back to service client."""
     result = update_user(uid, updates)
@@ -173,7 +194,22 @@ def render():
     """, unsafe_allow_html=True)
 
     # ── Tabs ────────────────────────────────────────────────────────────────
-    tab_info, tab_photos = st.tabs(["👤 Profile", "📸 Photos"])
+    # Profile view counter
+    try:
+        from utils.db import get_profile_view_count
+        views_7d = get_profile_view_count(uid, days=7)
+        views_30d = get_profile_view_count(uid, days=30)
+        vc1, vc2, vc3 = st.columns(3)
+        with vc1:
+            st.metric("👁️ Views (7 days)", views_7d)
+        with vc2:
+            st.metric("👁️ Views (30 days)", views_30d)
+        with vc3:
+            st.metric("📊 Profile", f"{completion}%")
+    except Exception:
+        pass
+
+    tab_info, tab_photos, tab_prompts, tab_verify = st.tabs(["👤 Profile", "📸 Photos", "💬 Prompts", "🔐 Verify"])
 
     # ── PROFILE TAB ─────────────────────────────────────────────────────────
     with tab_info:
@@ -459,4 +495,127 @@ def render():
                         else:
                             st.error("Upload failed — check your storage bucket settings.")
 
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    # ── PROMPTS TAB ──────────────────────────────────────────────────────────
+    with tab_prompts:
+        st.markdown('<div class="section-card"><div class="section-title">💬 Prompt Answers</div>', unsafe_allow_html=True)
+        st.caption("Answer fun questions to show your personality on your profile.")
+
+        PROMPTS = [
+            "My perfect Sunday is...",
+            "The way to my heart is...",
+            "I'm looking for someone who...",
+            "My most controversial opinion is...",
+            "A fun fact about me is...",
+        ]
+
+        current_prompts = user.get("prompt_answers") or {}
+        new_prompts = {}
+
+        for prompt in PROMPTS:
+            ans = st.text_input(
+                prompt,
+                value=current_prompts.get(prompt, ""),
+                max_chars=120,
+                placeholder="Type your answer...",
+                key=f"prompt_{hash(prompt)}",
+            )
+            if ans.strip():
+                new_prompts[prompt] = ans.strip()
+
+        if st.button("Save Prompts", type="primary", key="save_prompts"):
+            ok, err = _save_profile(uid, {"prompt_answers": new_prompts})
+            if ok:
+                refresh_session_user()
+                st.success("Prompts saved!")
+            else:
+                st.error(f"Save failed: {err}")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    # ── VERIFY TAB ───────────────────────────────────────────────────────────
+    with tab_verify:
+        st.markdown('<div class="section-card"><div class="section-title">🔐 Phone Verification</div>', unsafe_allow_html=True)
+
+        if user.get("is_verified"):
+            st.success("✓ Your profile is verified! Your verified badge is visible to others.")
+        else:
+            st.info(
+                "Verify your phone number to get a ✓ verified badge on your profile. "
+                "This builds trust and gets you more matches."
+            )
+            phone = st.text_input("Phone number", placeholder="0712 345 678",
+                                  value=user.get("phone") or "")
+
+            # Africa's Talking SMS verification
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("Send verification code", type="primary"):
+                    if phone:
+                        code = _send_sms_code(uid, phone)
+                        if code:
+                            st.session_state["verify_code"] = code
+                            st.session_state["verify_phone"] = phone
+                            st.success(f"Code sent to {phone}!")
+                        else:
+                            st.info("SMS API not configured. Add AFRICASTALKING_KEY to .env to enable SMS.")
+                            # Demo mode: show a test code
+                            import random
+                            demo_code = str(random.randint(100000, 999999))
+                            st.session_state["verify_code"] = demo_code
+                            st.session_state["verify_phone"] = phone
+                            st.info(f"Demo mode — your code is: **{demo_code}**")
+                    else:
+                        st.error("Enter your phone number.")
+
+            entered_code = st.text_input("Enter the 6-digit code:", max_chars=6,
+                                          placeholder="123456")
+            with col2:
+                if st.button("Verify", type="primary"):
+                    stored = st.session_state.get("verify_code")
+                    if entered_code and stored and entered_code.strip() == str(stored):
+                        ok, _ = _save_profile(uid, {
+                            "is_verified": True,
+                            "phone": st.session_state.get("verify_phone", phone),
+                            "phone_verified": True,
+                        })
+                        if ok:
+                            refresh_session_user()
+                            st.balloons()
+                            st.success("Phone verified! ✓ badge added to your profile.")
+                            st.session_state.pop("verify_code", None)
+                            st.rerun()
+                    else:
+                        st.error("Incorrect code. Try again.")
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        # Profile video
+        st.markdown('<div class="section-card"><div class="section-title">🎥 Profile Video</div>', unsafe_allow_html=True)
+        st.caption("Upload a short intro video (max 30MB, .mp4 or .mov)")
+
+        if user.get("profile_video_url"):
+            st.video(user["profile_video_url"])
+            if st.button("Remove video"):
+                ok, _ = _save_profile(uid, {"profile_video_url": None})
+                if ok:
+                    refresh_session_user()
+                    st.rerun()
+
+        vid_file = st.file_uploader("Upload video", type=["mp4","mov","webm"],
+                                     label_visibility="collapsed", key="vid_upload")
+        if vid_file:
+            if vid_file.size > 30 * 1024 * 1024:
+                st.error("Video too large. Max 30MB.")
+            else:
+                if st.button("Upload video", type="primary"):
+                    with st.spinner("Uploading..."):
+                        from utils.media import upload_video
+                        url = upload_video(vid_file.getvalue(), uid)
+                    if url:
+                        ok, _ = _save_profile(uid, {"profile_video_url": url})
+                        if ok:
+                            refresh_session_user()
+                            st.success("Video uploaded!")
+                            st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)

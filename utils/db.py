@@ -489,6 +489,76 @@ def get_event_attendees(event_id: str) -> List[Dict]:
         return []
 
 
+# PROFILE VIEWS
+
+def record_profile_view(viewer_id: str, viewed_id: str):
+    """Record that viewer_id viewed viewed_id's profile."""
+    if viewer_id == viewed_id:
+        return
+    try:
+        from datetime import datetime, timezone
+        get_service_client().table("profile_views").upsert({
+            "viewer_id": viewer_id,
+            "viewed_id": viewed_id,
+            "viewed_at": datetime.now(timezone.utc).isoformat(),
+        }, on_conflict="viewer_id,viewed_id").execute()
+    except Exception:
+        pass
+
+
+def get_profile_view_count(user_id: str, days: int = 7) -> int:
+    """How many unique people viewed this user in the last N days."""
+    try:
+        from datetime import datetime, timezone, timedelta
+        since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+        res = get_client().table("profile_views").select("id", count="exact")            .eq("viewed_id", user_id).gte("viewed_at", since).execute()
+        return res.count or 0
+    except Exception:
+        return 0
+
+
+def get_recent_viewers(user_id: str, limit: int = 5) -> List[Dict]:
+    """Get recent viewers of a profile (Premium feature)."""
+    try:
+        res = get_service_client().table("profile_views")            .select("viewer_id, viewed_at")            .eq("viewed_id", user_id)            .order("viewed_at", desc=True)            .limit(limit).execute()
+        viewers = []
+        for r in (res.data or []):
+            u = get_user_by_id(r["viewer_id"])
+            if u:
+                u["_viewed_at"] = r["viewed_at"]
+                viewers.append(u)
+        return viewers
+    except Exception:
+        return []
+
+
+# MESSAGE REACTIONS
+
+def add_reaction(message_id: str, user_id: str, emoji: str):
+    try:
+        import json
+        # Get current reactions
+        res = get_client().table("messages").select("reactions").eq("id", message_id).execute()
+        if not res.data:
+            return
+        reactions = res.data[0].get("reactions") or {}
+        if isinstance(reactions, str):
+            try: reactions = json.loads(reactions)
+            except: reactions = {}
+        if emoji not in reactions:
+            reactions[emoji] = []
+        if user_id not in reactions[emoji]:
+            reactions[emoji].append(user_id)
+        elif user_id in reactions[emoji]:
+            # Toggle off
+            reactions[emoji].remove(user_id)
+            if not reactions[emoji]:
+                del reactions[emoji]
+        get_service_client().table("messages").update({"reactions": reactions})            .eq("id", message_id).execute()
+    except Exception:
+        pass
+
+
 # ADMIN
 
 def get_all_reports() -> List[Dict]:

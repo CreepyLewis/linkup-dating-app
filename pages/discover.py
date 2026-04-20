@@ -129,6 +129,12 @@ def render():
 # ── Profile card renderer ──────────────────────────────────────────────────────
 
 def _render_card(profile, user, uid, idx, profiles):
+    # Record that this user viewed this profile
+    try:
+        from utils.db import record_profile_view
+        record_profile_view(uid, profile["id"])
+    except Exception:
+        pass
     from components.profile_card import get_avatar_url
     from utils.db import get_distance_km
     from utils.filters import format_distance
@@ -219,6 +225,16 @@ def _render_card(profile, user, uid, idx, profiles):
 
         st.markdown("")
 
+        # "New on LinkUp" tag
+        from datetime import datetime, timezone, timedelta
+        try:
+            joined = datetime.fromisoformat((profile.get("created_at") or "").replace("Z","+00:00"))
+            is_new = (datetime.now(timezone.utc) - joined) < timedelta(days=7)
+        except Exception:
+            is_new = False
+        if is_new:
+            st.markdown('<span class="new-tag">🆕 New on LinkUp</span>', unsafe_allow_html=True)
+
         # Name, age, verified, intent
         verified_html = ' <span style="color:#3B82F6;font-size:0.9rem;" title="Verified">✓</span>' if is_verified else ""
         st.markdown(
@@ -251,6 +267,35 @@ def _render_card(profile, user, uid, idx, profiles):
                 for i in interests[:8]
             )
             st.markdown(tags, unsafe_allow_html=True)
+
+        # Match percentage bar
+        from utils.matching import calculate_match_score
+        score = profile.get("_score") or calculate_match_score(user, profile)
+        score_int = int(score)
+        score_color = "#FF6B6B" if score >= 70 else "#F59E0B" if score >= 50 else "#9CA3AF"
+        st.markdown(f"""
+        <div style="margin:8px 0 4px;">
+            <div style="display:flex;justify-content:space-between;font-size:.78rem;color:#888;margin-bottom:3px;">
+                <span>Match score</span>
+                <span style="color:{score_color};font-weight:700;">{score_int}%</span>
+            </div>
+            <div style="background:#F0F0F0;border-radius:10px;height:6px;">
+                <div style="background:{score_color};border-radius:10px;height:6px;width:{score_int}%;"></div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # Prompt answers
+        prompts = profile.get("prompt_answers") or {}
+        if prompts:
+            for q, a in list(prompts.items())[:2]:
+                st.markdown(f"""
+                <div style="background:#FFF8F8;border:1px solid #FFE4E4;border-radius:10px;
+                     padding:8px 12px;margin:4px 0;">
+                    <div style="color:#FF6B6B;font-size:.78rem;font-weight:600;">{q}</div>
+                    <div style="color:#333;font-size:.9rem;">{a}</div>
+                </div>
+                """, unsafe_allow_html=True)
 
         st.markdown("")
 

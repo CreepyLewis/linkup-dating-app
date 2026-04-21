@@ -266,26 +266,79 @@ def render():
     with tab5:
         st.markdown('<div class="settings-section"><h3>🎨 Appearance</h3>', unsafe_allow_html=True)
         st.markdown("**Theme**")
+
+        import os
+        config_path = os.path.join(os.path.dirname(__file__), "..", ".streamlit", "config.toml")
+        config_path = os.path.normpath(config_path)
+
+        # Read current theme
+        current_bg = "#F8F9FA"
+        try:
+            content = open(config_path).read()
+            if "#1A1A2E" in content:
+                current_idx = 1
+            else:
+                current_idx = 0
+        except Exception:
+            current_idx = 0
+
         theme = st.radio(
             "Choose theme",
-            ["Light 🌞", "Dark 🌙", "System default"],
-            index=st.session_state.get("theme_choice", 0),
+            ["☀️ Light", "🌙 Dark"],
+            index=current_idx,
             horizontal=True,
         )
-        if theme != st.session_state.get("theme_choice_label", "Light 🌞"):
-            st.session_state["theme_choice_label"] = theme
-            theme_map = {"Light 🌞": "light", "Dark 🌙": "dark", "System default": ""}
-            st.markdown(f"""
-            <script>
-            document.documentElement.setAttribute('data-theme', '{theme_map.get(theme, "")}');
-            localStorage.setItem('linkup_theme', '{theme_map.get(theme, "")}');
-            </script>
-            """, unsafe_allow_html=True)
-            st.success("Theme updated! Refresh the page to see the full effect.")
+
+        if st.button("Apply Theme", type="primary", key="apply_theme"):
+            if theme == "🌙 Dark":
+                new_config = """[theme]
+primaryColor = "#FF6B6B"
+backgroundColor = "#1A1A2E"
+secondaryBackgroundColor = "#16213E"
+textColor = "#E8E8E8"
+font = "sans serif"
+
+[server]
+headless = true
+port = 8501
+
+[browser]
+gatherUsageStats = false
+
+[client]
+toolbarMode = "minimal"
+"""
+            else:
+                new_config = """[theme]
+primaryColor = "#FF6B6B"
+backgroundColor = "#F8F9FA"
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#222222"
+font = "sans serif"
+
+[server]
+headless = true
+port = 8501
+
+[browser]
+gatherUsageStats = false
+
+[client]
+toolbarMode = "minimal"
+"""
+            try:
+                with open(config_path, "w") as f:
+                    f.write(new_config)
+                st.success("Theme saved! The app will reload automatically.")
+                import time; time.sleep(1)
+                st.rerun()
+            except Exception as e:
+                st.error(f"Could not save theme: {e}")
+                st.info("On Streamlit Cloud, themes can't be changed at runtime. Change it in the Streamlit Cloud dashboard → Settings → Theme instead.")
 
         st.markdown("**Language**")
         st.selectbox("App language", ["English 🇬🇧", "Swahili 🇰🇪"], key="app_language")
-        st.caption("More languages coming soon.")
+        st.caption("Swahili translation coming soon.")
         st.markdown("</div>", unsafe_allow_html=True)
 
     # ── LOGOUT TAB ──────────────────────────────────────────────────────────

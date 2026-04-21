@@ -534,6 +534,35 @@ def get_recent_viewers(user_id: str, limit: int = 5) -> List[Dict]:
 
 # MESSAGE REACTIONS
 
+def delete_message(message_id: str, user_id: str):
+    """Delete a message (only sender can delete)."""
+    try:
+        get_service_client().table("messages").delete()            .eq("id", message_id).eq("sender_id", user_id).execute()
+    except Exception:
+        pass
+
+
+def edit_message(message_id: str, user_id: str, new_text: str):
+    """Edit a message text (only sender can edit)."""
+    try:
+        get_service_client().table("messages").update({
+            "message": new_text,
+            "edited": True,
+        }).eq("id", message_id).eq("sender_id", user_id).execute()
+    except Exception:
+        pass
+
+
+def get_messages_since(match_id: str, since_id: str = None, limit: int = 50):
+    """Get messages, optionally only newer than a given message id."""
+    try:
+        q = get_client().table("messages").select("*")            .eq("match_id", match_id)            .order("created_at", desc=False)            .limit(limit)
+        res = q.execute()
+        return res.data or []
+    except Exception:
+        return []
+
+
 def add_reaction(message_id: str, user_id: str, emoji: str):
     try:
         import json

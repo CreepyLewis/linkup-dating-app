@@ -1,151 +1,190 @@
 /* ============================================
-   LinkUp — Global Styles
+   LinkUp — Global Styles + Mobile Responsive
    ============================================ */
 
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap');
 
+/* ── Base ────────────────────────────────── */
 html, body, [class*="css"] {
     font-family: 'Plus Jakarta Sans', sans-serif !important;
 }
 
+/* ── Hide Streamlit chrome completely ───── */
+#MainMenu                              { visibility: hidden; }
+header[data-testid="stHeader"]         { display: none !important; }
+footer                                 { display: none !important; }
+[data-testid="stToolbar"]              { display: none !important; }
+[data-testid="stDecoration"]           { display: none !important; }
+[data-testid="stStatusWidget"]         { display: none !important; }
+.viewerBadge_container__1QSob         { display: none !important; }
+.stDeployButton                        { display: none !important; }
+
+/* ── Layout ─────────────────────────────── */
 .block-container {
-    padding-top: 1rem !important;
+    padding-top: 0.5rem !important;
     padding-bottom: 2rem !important;
     max-width: 1100px;
 }
 
-/* ── Brand ────────────────────────────────── */
+/* ── Brand colours ──────────────────────── */
 :root {
     --brand:       #FF6B6B;
-    --brand-light: #FF8E53;
+    --brand-2:     #FF8E53;
     --brand-bg:    #FFF5F5;
     --online:      #22C55E;
     --blue:        #3B82F6;
     --radius:      16px;
 }
 
-/* ── Dark mode support ────────────────────── */
-[data-theme="dark"] {
-    --brand-bg: #2A1515;
-}
-
-/* ── Swipe card animations ────────────────── */
+/* ── Animations ─────────────────────────── */
 @keyframes swipe-right {
-    0%   { transform: translateX(0) rotate(0deg); opacity:1; }
-    100% { transform: translateX(120%) rotate(15deg); opacity:0; }
+    to { transform: translateX(120%) rotate(15deg); opacity: 0; }
 }
 @keyframes swipe-left {
-    0%   { transform: translateX(0) rotate(0deg); opacity:1; }
-    100% { transform: translateX(-120%) rotate(-15deg); opacity:0; }
+    to { transform: translateX(-120%) rotate(-15deg); opacity: 0; }
 }
 @keyframes pop-in {
-    0%   { transform: scale(0.85); opacity:0; }
-    100% { transform: scale(1);    opacity:1; }
+    from { transform: scale(0.85); opacity: 0; }
+    to   { transform: scale(1);    opacity: 1; }
+}
+@keyframes shimmer {
+    0%   { background-position: -800px 0; }
+    100% { background-position:  800px 0; }
+}
+@keyframes hearts {
+    0%, 100% { transform: scale(1); }
+    50%       { transform: scale(1.2); }
+}
+@keyframes fadein {
+    from { opacity: 0; transform: translateY(10px); }
+    to   { opacity: 1; transform: translateY(0); }
 }
 
 .card-swipe-right { animation: swipe-right 0.35s ease forwards; }
 .card-swipe-left  { animation: swipe-left  0.35s ease forwards; }
 .card-pop-in      { animation: pop-in      0.25s ease forwards; }
+.fadein           { animation: fadein      0.3s  ease forwards; }
 
-/* ── Skeleton loader ──────────────────────── */
-@keyframes shimmer {
-    0%   { background-position: -800px 0; }
-    100% { background-position:  800px 0; }
-}
+/* ── Skeleton loader ─────────────────────── */
 .skeleton {
-    background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+    background: linear-gradient(90deg,#f0f0f0 25%,#e0e0e0 50%,#f0f0f0 75%);
     background-size: 800px 100%;
     animation: shimmer 1.5s infinite;
     border-radius: 10px;
 }
-.skeleton-card  { height: 380px; width: 100%; margin-bottom: 1rem; }
-.skeleton-line  { height: 18px; margin-bottom: 10px; }
-.skeleton-short { width: 60%; }
+.skeleton-card  { height: 340px; width: 100%; margin-bottom: 1rem; }
+.skeleton-line  { height: 16px; margin-bottom: 8px; }
+.skeleton-short { width: 55%; }
 
-/* ── Match popup ──────────────────────────── */
-@keyframes hearts {
-    0%, 100% { transform: scale(1); }
-    50%       { transform: scale(1.2); }
-}
-.match-hearts { animation: hearts 0.8s ease infinite; display:inline-block; }
-
-/* ── Unread badge ─────────────────────────── */
-.badge {
-    background: var(--brand);
-    color: white;
-    border-radius: 50%;
-    font-size: 0.65rem;
-    padding: 1px 5px;
-    font-weight: 700;
-    margin-left: 3px;
-    vertical-align: top;
-}
-
-/* ── Profile view counter ─────────────────── */
-.view-stat {
-    background: var(--brand-bg);
-    border: 1px solid #FFCCCC;
-    border-radius: 12px;
-    padding: 0.75rem 1rem;
-    text-align: center;
-}
-.view-stat .num { font-size: 1.8rem; font-weight: 800; color: var(--brand); }
-.view-stat .lbl { color: #888; font-size: 0.8rem; }
-
-/* ── Reaction bubble ──────────────────────── */
-.reaction-bar {
-    display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px;
-}
-.reaction-pill {
-    background: #F5F5F5;
-    border: 1px solid #EEE;
-    border-radius: 20px;
-    padding: 2px 8px;
-    font-size: 0.82rem;
-    cursor: pointer;
-}
-.reaction-pill:hover { background: #FFE4E4; border-color: #FFCCCC; }
-
-/* ── Interest match bar ───────────────────── */
-.match-pct-bar {
-    height: 6px;
-    border-radius: 10px;
-    background: linear-gradient(90deg, var(--brand), var(--brand-light));
-    margin-top: 4px;
-}
-
-/* ── New user tag ─────────────────────────── */
+/* ── Tags / pills ───────────────────────── */
 .new-tag {
-    background: #ECFDF5;
-    color: #059669;
-    border: 1px solid #A7F3D0;
-    border-radius: 20px;
-    padding: 2px 10px;
-    font-size: 0.75rem;
-    font-weight: 600;
+    background: #ECFDF5; color: #059669;
+    border: 1px solid #A7F3D0; border-radius: 20px;
+    padding: 2px 10px; font-size: 0.75rem; font-weight: 600;
+}
+.interest-pill {
+    background: var(--brand-bg); color: var(--brand);
+    border: 1px solid #FFCCCC; border-radius: 20px;
+    padding: 2px 10px; font-size: 0.78rem; margin: 2px;
+    display: inline-block;
+}
+.common-pill {
+    background: #F0FFF4; color: #22C55E;
+    border: 1px solid #BBF7D0; border-radius: 20px;
+    padding: 2px 10px; font-size: 0.78rem; margin: 2px;
+    display: inline-block;
 }
 
-/* ── Prompt cards ─────────────────────────── */
+/* ── Prompt cards ────────────────────────── */
 .prompt-card {
-    background: #FFF8F8;
-    border: 1px solid #FFE4E4;
-    border-radius: 12px;
-    padding: 1rem;
-    margin-bottom: 0.5rem;
+    background: #FFF8F8; border: 1px solid #FFE4E4;
+    border-radius: 12px; padding: 0.9rem; margin-bottom: 0.5rem;
 }
-.prompt-q { color: var(--brand); font-weight: 600; font-size: 0.85rem; margin-bottom: 4px; }
-.prompt-a { color: #333; font-size: 0.95rem; }
+.prompt-q { color: var(--brand); font-weight: 600; font-size: 0.82rem; margin-bottom: 4px; }
+.prompt-a { color: #333; font-size: 0.92rem; }
 
-/* ── Streamlit overrides ──────────────────── */
+/* ── Match celebration hearts ───────────── */
+.match-hearts { animation: hearts 0.8s ease infinite; display: inline-block; }
+
+/* ── Reaction pills ─────────────────────── */
+.rpill {
+    background: #F5F5F5; border: 1px solid #EEE;
+    border-radius: 20px; padding: 1px 7px;
+    font-size: 0.8rem; cursor: pointer;
+}
+.rpill:hover { background: #FFE4E4; }
+
+/* ── Streamlit button overrides ─────────── */
 .stButton button {
     border-radius: 10px !important;
     font-weight: 600 !important;
+    transition: transform 0.1s ease, box-shadow 0.1s ease !important;
 }
-.stTextInput input, .stTextArea textarea {
-    border-radius: 10px !important;
+.stButton button:active {
+    transform: scale(0.97) !important;
 }
+
+/* ── Metric value colour ─────────────────── */
 div[data-testid="stMetricValue"] {
-    font-size: 2rem !important;
-    font-weight: 800 !important;
     color: var(--brand) !important;
+    font-weight: 800 !important;
+}
+
+/* ════════════════════════════════════════════
+   MOBILE RESPONSIVE  (≤ 640px)
+   ════════════════════════════════════════════ */
+@media (max-width: 640px) {
+    /* Tighter container */
+    .block-container {
+        padding-left: 0.75rem !important;
+        padding-right: 0.75rem !important;
+    }
+
+    /* Bigger tap targets */
+    .stButton button {
+        min-height: 44px !important;
+        font-size: 0.85rem !important;
+    }
+
+    /* Full-width inputs */
+    .stTextInput input,
+    .stTextArea textarea,
+    .stSelectbox select {
+        font-size: 16px !important;  /* prevents iOS zoom */
+    }
+
+    /* Profile cards full width on mobile */
+    div[data-testid="stHorizontalBlock"] > div {
+        min-width: 0 !important;
+    }
+
+    /* Chat bubbles narrower */
+    .cbubble-sent, .cbubble-recv {
+        max-width: 85% !important;
+    }
+
+    /* Hide sidebar */
+    section[data-testid="stSidebar"] { display: none !important; }
+
+    /* Metric cards smaller text */
+    div[data-testid="stMetricValue"] { font-size: 1.4rem !important; }
+}
+
+/* ════════════════════════════════════════════
+   TABLET  (641px – 1024px)
+   ════════════════════════════════════════════ */
+@media (min-width: 641px) and (max-width: 1024px) {
+    .block-container {
+        padding-left: 1rem !important;
+        padding-right: 1rem !important;
+        max-width: 100% !important;
+    }
+}
+
+/* PWA safe areas (notch phones) */
+@supports (padding: max(0px)) {
+    .block-container {
+        padding-left:  max(1rem, env(safe-area-inset-left)) !important;
+        padding-right: max(1rem, env(safe-area-inset-right)) !important;
+    }
 }

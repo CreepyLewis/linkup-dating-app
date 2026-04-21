@@ -34,6 +34,25 @@ css_path = Path(__file__).parent / "assets" / "styles.css"
 if css_path.exists():
     st.markdown(f"<style>{css_path.read_text()}</style>", unsafe_allow_html=True)
 
+# PWA meta tags + hide Streamlit chrome
+st.markdown("""
+<link rel="manifest" href="/app/static/manifest.json">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="LinkUp">
+<meta name="theme-color" content="#FF6B6B">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<style>
+#MainMenu{visibility:hidden}
+header[data-testid="stHeader"]{display:none!important}
+footer{display:none!important}
+[data-testid="stToolbar"]{display:none!important}
+[data-testid="stDecoration"]{display:none!important}
+.stDeployButton{display:none!important}
+</style>
+""", unsafe_allow_html=True)
+
 # Startup config check
 from utils.startup_check import show_setup_wizard
 if not show_setup_wizard():

@@ -1,14 +1,14 @@
 """
 pages/home.py
-Home dashboard - stats, quick actions, notifications
+Mobile-first home dashboard.
 """
 
 import streamlit as st
-from utils.auth import get_session_user, require_auth, refresh_session_user
+from utils.auth import get_session_user, require_auth
 from utils.db import (
     get_user_matches, get_unread_count, get_notifications,
     mark_notifications_read, get_unread_notification_count,
-    get_profile_completion, update_last_seen
+    get_profile_completion, update_last_seen,
 )
 
 
@@ -17,148 +17,201 @@ def render():
     user = get_session_user()
     update_last_seen(user["id"])
 
-    # Profile completion warning
-    completion = get_profile_completion(user)
+    completion  = get_profile_completion(user)
+    matches     = get_user_matches(user["id"]) or []
+    unread_msgs = get_unread_count(user["id"])
+    first_name  = (user.get("name") or "there").split()[0]
+
+    # Profile nudge
     if completion < 60:
-        st.warning(
-            f"⚠️ Your profile is only **{completion}% complete**. "
-            "Complete it to get more matches! "
-        )
-        if st.button("Complete Profile →"):
+        st.warning(f"⚠️ Profile {completion}% complete — add more info to get matches!")
+        if st.button("Complete Profile →", key="nudge_btn"):
             st.query_params["page"] = "profile"
             st.rerun()
 
-    # Welcome header
     st.markdown(f"""
     <style>
-    .home-hero {{
-        background: linear-gradient(135deg, #FF6B6B 0%, #FF8E53 100%);
-        border-radius: 20px;
-        padding: 2rem;
-        color: white;
-        margin-bottom: 1.5rem;
-        box-shadow: 0 8px 32px rgba(255,107,107,0.3);
+    .hero {{
+        background: linear-gradient(135deg,#FF6B6B,#FF8E53);
+        border-radius: 20px; padding: 1.75rem 1.5rem;
+        color: white; margin-bottom: 1.25rem;
+        box-shadow: 0 8px 32px rgba(255,107,107,.25);
     }}
-    .home-hero h1 {{ margin: 0; font-size: 1.8rem; }}
-    .home-hero p {{ margin: 0.5rem 0 0 0; opacity: 0.9; }}
+    .hero h2 {{ margin:0; font-size:1.6rem; font-weight:800; }}
+    .hero p  {{ margin:.4rem 0 0; opacity:.9; font-size:.95rem; }}
+
+    /* Stats grid — 4 cols desktop, 2x2 mobile */
+    .stats-grid {{
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 12px;
+        margin-bottom: 1.25rem;
+    }}
     .stat-card {{
-        background: white;
-        border-radius: 16px;
-        padding: 1.25rem;
-        text-align: center;
-        box-shadow: 0 4px 16px rgba(0,0,0,0.08);
-        border-left: 4px solid #FF6B6B;
+        background: white; border-radius: 14px;
+        padding: 1rem 0.75rem; text-align: center;
+        box-shadow: 0 3px 12px rgba(0,0,0,.07);
+        border-top: 4px solid #FF6B6B;
     }}
-    .stat-number {{ font-size: 2rem; font-weight: 800; color: #FF6B6B; }}
-    .stat-label {{ color: #888; font-size: 0.85rem; margin-top: 0.25rem; }}
-    .notif-item {{
-        padding: 0.75rem 1rem;
-        border-radius: 12px;
-        background: white;
-        margin-bottom: 0.5rem;
+    .stat-num  {{ font-size: 1.7rem; font-weight: 800; color: #FF6B6B; line-height:1.1; }}
+    .stat-lbl  {{ color: #999; font-size: 0.76rem; margin-top: 4px; }}
+
+    /* Action grid — 2x2 */
+    .action-grid {{
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        margin-bottom: 1.25rem;
+    }}
+    .action-card {{
+        background: white; border-radius: 14px;
+        padding: 1.1rem 0.75rem; text-align: center;
+        box-shadow: 0 3px 12px rgba(0,0,0,.07);
+        cursor: pointer; border: 1.5px solid #FFE4E4;
+        transition: transform .15s ease;
+        text-decoration: none;
+    }}
+    .action-card:hover {{ transform: translateY(-3px); border-color: #FF6B6B; }}
+    .action-icon {{ font-size: 1.5rem; }}
+    .action-lbl  {{ font-size: .82rem; font-weight: 600; color: #444; margin-top: 4px; }}
+
+    /* Notification item */
+    .notif {{
+        padding: .65rem 1rem; border-radius: 10px;
+        background: white; margin-bottom: .4rem;
         border-left: 3px solid #FF6B6B;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-        font-size: 0.9rem;
+        box-shadow: 0 2px 8px rgba(0,0,0,.05);
+        font-size: .88rem;
     }}
-    .notif-unread {{ background: #FFF8F8; }}
-    .quick-action {{
-        background: white;
-        border-radius: 16px;
-        padding: 1.5rem;
-        text-align: center;
-        cursor: pointer;
-        box-shadow: 0 4px 16px rgba(0,0,0,0.08);
-        transition: transform 0.2s;
+    .notif-new {{ background: #FFF8F8; }}
+
+    /* Match row */
+    .match-row {{
+        display: flex; gap: 10px; overflow-x: auto;
+        padding-bottom: 4px; scrollbar-width: none;
     }}
-    .quick-action:hover {{ transform: translateY(-4px); }}
+    .match-chip {{
+        flex-shrink: 0; text-align: center;
+        cursor: pointer; width: 72px;
+    }}
+    .match-chip img {{
+        width: 60px; height: 60px; border-radius: 50%;
+        object-fit: cover; border: 2.5px solid #FF6B6B;
+        display: block; margin: 0 auto 4px;
+    }}
+    .match-chip span {{ font-size: .72rem; color: #555; font-weight: 600; }}
+
+    /* Mobile overrides */
+    @media (max-width: 640px) {{
+        .stats-grid {{ grid-template-columns: repeat(2, 1fr); }}
+        .hero h2   {{ font-size: 1.35rem; }}
+        .stat-num  {{ font-size: 1.4rem; }}
+    }}
     </style>
-    <div class="home-hero">
-        <h1>Hey {user.get('name','').split()[0] or 'there'} 👋</h1>
+
+    <div class="hero">
+        <h2>Hey {first_name} 👋</h2>
         <p>Ready to find your person today?</p>
+    </div>
+
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-num">{len(matches)}</div>
+            <div class="stat-lbl">💞 Matches</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-num">{unread_msgs if unread_msgs > 0 else "—"}</div>
+            <div class="stat-lbl">💬 Messages</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-num">{completion}%</div>
+            <div class="stat-lbl">📊 Profile</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-num">🔥</div>
+            <div class="stat-lbl">Active Now</div>
+        </div>
     </div>
     """, unsafe_allow_html=True)
 
-    # Stats row
-    matches = get_user_matches(user["id"]) or []
-    unread_msgs = get_unread_count(user["id"])
+    # Profile completion bar
+    if completion < 100:
+        st.progress(completion / 100, text=f"Profile {completion}% complete")
 
-    col1, col2, col3, col4 = st.columns(4)
-    stats = [
-        (col1, len(matches), "💞 Matches"),
-        (col2, unread_msgs, "💬 New Messages"),
-        (col3, f"{completion}%", "📊 Profile"),
-        (col4, "🔥", "Active Now"),
-    ]
-    for col, val, label in stats:
+    # ── Quick actions ──────────────────────────────────────────────────────────
+    st.markdown("**Quick Actions**")
+    a1, a2, a3, a4 = st.columns(4)
+    for col, (icon, label, page, style) in zip(
+        [a1, a2, a3, a4],
+        [
+            ("🔥", "Discover", "discover", "primary"),
+            ("💞", "Matches",  "matches",  "secondary"),
+            ("💬", "Chat",     "chat",     "secondary"),
+            ("👤", "Profile",  "profile",  "secondary"),
+        ],
+    ):
         with col:
-            st.markdown(f"""
-            <div class="stat-card">
-                <div class="stat-number">{val}</div>
-                <div class="stat-label">{label}</div>
-            </div>
-            """, unsafe_allow_html=True)
-
-    st.markdown("---")
-
-    # Quick actions + notifications
-    col_left, col_right = st.columns([3, 2])
-
-    with col_left:
-        st.subheader("🚀 Quick Actions")
-        action_cols = st.columns(2)
-        actions = [
-            ("action_discover", "🔥 Discover People", "discover"),
-            ("action_matches", "💞 My Matches", "matches"),
-            ("action_chat", "💬 Open Chat", "chat"),
-            ("action_profile", "✏️ Edit Profile", "profile"),
-        ]
-        for i, (key, label, page) in enumerate(actions):
-            with action_cols[i % 2]:
-                if st.button(label, key=key, use_container_width=True,
-                             type="primary" if i == 0 else "secondary"):
-                    st.query_params["page"] = page
-                    st.rerun()
-
-        # Profile completion bar
-        st.markdown(f"**Profile Completion: {completion}%**")
-        st.progress(completion / 100)
-
-    with col_right:
-        st.subheader("🔔 Notifications")
-        notifications = get_notifications(user["id"], limit=8)
-        unread_count = get_unread_notification_count(user["id"])
-
-        if unread_count > 0:
-            if st.button(f"Mark all read ({unread_count})", key="mark_read"):
-                mark_notifications_read(user["id"])
+            if st.button(f"{icon}\n{label}", key=f"qa_{page}",
+                         use_container_width=True, type=style):
+                st.query_params["page"] = page
                 st.rerun()
 
-        if not notifications:
-            st.info("No notifications yet. Start swiping! 🔥")
-        else:
-            for notif in notifications:
-                cls = "notif-item notif-unread" if not notif.get("is_read") else "notif-item"
-                st.markdown(f"""
-                <div class="{cls}">
-                    {notif.get('title', '')} <br>
-                    <small style="color:#AAA">{notif.get('body', '')}</small>
-                </div>
-                """, unsafe_allow_html=True)
-
-    # Recent matches preview
+    # ── Recent matches ─────────────────────────────────────────────────────────
     if matches:
         st.markdown("---")
-        st.subheader("💞 Recent Matches")
-        cols = st.columns(min(4, len(matches)))
-        for i, match in enumerate(matches[:4]):
-            other = match["other_user"]
-            with cols[i]:
-                from components.profile_card import get_avatar_url
-                img = get_avatar_url(other)
-                st.image(img, width=80)
-                st.caption(f"**{other.get('name','?')}**, {other.get('age','?')}")
-                if st.button("Chat →", key=f"home_chat_{match['match_id']}", use_container_width=True):
-                    st.session_state["active_match_id"] = match["match_id"]
+        st.markdown("**💞 Recent Matches**")
+        from components.profile_card import get_avatar_url
+
+        # Build horizontal scroll row in HTML
+        chips = ""
+        for m in matches[:8]:
+            other = m["other_user"]
+            img   = get_avatar_url(other)
+            name  = (other.get("name") or "?").split()[0]
+            chips += f"""
+            <div class="match-chip">
+                <img src="{img}" alt="{name}">
+                <span>{name}</span>
+            </div>"""
+
+        st.markdown(f'<div class="match-row">{chips}</div>', unsafe_allow_html=True)
+
+        # Chat buttons below
+        for i, m in enumerate(matches[:4]):
+            other = m["other_user"]
+            name  = other.get("name") or "?"
+            c1, c2 = st.columns([3, 1])
+            with c1:
+                st.markdown(f"**{name}**, {other.get('age','?')}")
+            with c2:
+                if st.button("Chat", key=f"hchat_{m['match_id']}", use_container_width=True):
+                    st.session_state["active_match_id"]   = m["match_id"]
                     st.session_state["active_match_user"] = other
                     st.query_params["page"] = "chat"
                     st.rerun()
+
+    # ── Notifications ──────────────────────────────────────────────────────────
+    st.markdown("---")
+    notifs      = get_notifications(user["id"], limit=6)
+    notif_count = get_unread_notification_count(user["id"])
+
+    hdr_c1, hdr_c2 = st.columns([3, 1])
+    with hdr_c1:
+        st.markdown("**🔔 Notifications**")
+    with hdr_c2:
+        if notif_count > 0:
+            if st.button(f"Read all ({notif_count})", key="mark_all_read"):
+                mark_notifications_read(user["id"])
+                st.rerun()
+
+    if not notifs:
+        st.info("No notifications yet. Start swiping! 🔥")
+    else:
+        for n in notifs:
+            cls = "notif notif-new" if not n.get("is_read") else "notif"
+            st.markdown(f"""
+            <div class="{cls}">
+                {n.get('title','')}
+                <br><small style="color:#AAA">{n.get('body','')}</small>
+            </div>
+            """, unsafe_allow_html=True)
